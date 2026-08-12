@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Top produkty - Fidl Plus{% endblock %}
+{% block content %}
+
+<h1>Top produkty</h1>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+
+  <!-- Ranking ilościowy -->
+  <div class="card">
+    <h2>Najczęściej kupowane</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Produkt</th>
+            <th>Ilość</th>
+            <th>Wydano</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in top_by_count %}
+        <tr>
+          <td style="color:var(--muted);font-size:.85rem;">{{ loop.index }}</td>
+          <td style="font-weight:500;">{{ p.name }}</td>
+          <td><span class="badge badge-blue">{{ p.count }}×</span></td>
+          <td class="amount">{{ "%.2f"|format(p.spend) }} zł</td>
+          <td>
+            <a href="/product?name={{ p.name|urlencode }}" class="badge badge-yellow">→</a>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Zmienność cen -->
+  <div class="card">
+    <h2>Największy wzrost ceny</h2>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;">
+      Produkty z min. 3 zakupami, posortowane wg % wzrostu.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Produkt</th>
+            <th>Min</th>
+            <th>Max</th>
+            <th>Wzrost</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in volatility %}
+        <tr>
+          <td style="font-weight:500;font-size:.88rem;">{{ p.name }}</td>
+          <td style="color:#059669;font-weight:600;">{{ "%.2f"|format(p.min_price) }} zł</td>
+          <td style="color:var(--red);font-weight:600;">{{ "%.2f"|format(p.max_price) }} zł</td>
+          <td>
+            <span class="badge" style="background:#fee2e2;color:#991b1b;">
+              +{{ "%.0f"|format(p.change_pct) }}%
+            </span>
+          </td>
+          <td>
+            <a href="/product?name={{ p.name|urlencode }}" class="badge badge-yellow">→</a>
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

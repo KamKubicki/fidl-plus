@@ -14,17 +14,17 @@ Pobiera dane przez mobilne API Lidl Plus i wyświetla je w przeglądarce.
 
 ## Screenshoty
 
-| Dashboard | Paragony |
+| Dashboard | Insights |
 |---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Paragony](docs/screenshots/receipts.png) |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Insights](docs/screenshots/insights.png) |
 
-| Szczegóły paragonu | Historia ceny |
+| Top produkty | Historia ceny |
 |---|---|
-| ![Szczegóły](docs/screenshots/receipt_detail.png) | ![Wykres](docs/screenshots/product_chart.png) |
+| ![Top produkty](docs/screenshots/top_products.png) | ![Wykres](docs/screenshots/product_chart.png) |
 
-| Wyszukiwarka | Logowanie |
+| Paragony | Szczegóły paragonu |
 |---|---|
-| ![Szukaj](docs/screenshots/search.png) | ![Login](docs/screenshots/login.png) |
+| ![Paragony](docs/screenshots/receipts.png) | ![Szczegóły](docs/screenshots/receipt_detail.png) |
 
 ## Wymagania
 

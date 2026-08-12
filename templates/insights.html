@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Insights - Fidl Plus{% endblock %}
+{% block content %}
+
+<h1>Insights</h1>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+
+  <!-- Wykres miesięczny -->
+  <div class="card" style="grid-column:1/-1;">
+    <h2>Wydatki miesięczne</h2>
+    <div class="chart-container" style="height:260px;">
+      <canvas id="monthlyChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Pie VAT -->
+  <div class="card">
+    <h2>Struktura wydatków wg VAT</h2>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:.75rem;">
+      A=23% (alkohol/przemysł) &nbsp;·&nbsp; B=8% (przetworzone) &nbsp;·&nbsp; C=5% (żywność) &nbsp;·&nbsp; D=0%
+    </p>
+    <div class="chart-container" style="height:240px;">
+      <canvas id="vatChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Top paragony -->
+  <div class="card">
+    <h2>Największe zakupy</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Data</th><th>Sklep</th><th>Suma</th><th></th></tr></thead>
+        <tbody>
+        {% for r in top_receipts %}
+        <tr>
+          <td style="color:var(--muted);font-size:.85rem;">{{ loop.index }}</td>
+          <td class="date-cell">{{ r.get('date','')[:10] }}</td>
+          <td class="store-cell">{{ r.get('store',{}).get('name','-')[:30] }}</td>
+          <td class="amount">{{ r.totalAmountString or ("%.2f"|format(r.totalAmount or 0)) }} zł</td>
+          <td>
+            {% if r.get('id') %}
+            <a href="/receipt/{{ r.id }}" class="badge badge-yellow">→</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Heatmap -->
+<div class="card">
+  <h2>Kiedy chodzisz na zakupy?</h2>
+  <p style="font-size:.82rem;color:var(--muted);margin-bottom:1rem;">Liczba wizyt w danej godzinie i dniu tygodnia</p>
+  <div style="overflow-x:auto;">
+    <table id="heatmap-table" style="border-collapse:separate;border-spacing:3px;font-size:.8rem;">
+      <thead>
+        <tr>
+          <th style="text-align:right;padding-right:8px;color:var(--muted);font-weight:400;">Godzina</th>
+          {% for d in day_names %}
+          <th style="text-align:center;min-width:44px;color:var(--muted);font-weight:600;">{{ d }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody id="heatmap-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ---- Dane ----
+const heatmapData = {{ heatmap|tojson }};
+const months      = {{ months|tojson }};
+const amounts     = {{ monthly_amounts|tojson }};
+const visits      = {{ monthly_visits|tojson }};
+const vatLabels   = {{ vat_labels|tojson }};
+const vatAmounts  = {{ vat_amounts|tojson }};
+
+// ---- Heatmap ----
+const hours = Array.from({length:24},(_,i)=>i);
+const days  = 7;
+let maxVal = 0;
+for(let h=0;h<24;h++) for(let d=0;d<7;d++){
+  const v = heatmapData[`${d}_${h}`]||0;
+  if(v>maxVal) maxVal=v;
+}
+const tbody = document.getElementById('heatmap-body');
+for(const h of hours){
+  const tr = document.createElement('tr');
+  const th = document.createElement('td');
+  th.style.cssText='text-align:right;padding-right:8px;color:#6b7280;white-space:nowrap;';
+  th.textContent = `${String(h).padStart(2,'0')}:00`;
+  tr.appendChild(th);
+  for(let d=0;d<7;d++){
+    const v = heatmapData[`${d}_${h}`]||0;
+    const td = document.createElement('td');
+    const intensity = maxVal>0 ? v/maxVal : 0;
+    const alpha = 0.08 + intensity*0.85;
+    td.style.cssText=`width:44px;height:28px;border-radius:4px;text-align:center;vertical-align:middle;font-size:.75rem;`;
+    td.style.background = v===0 ? '#f3f4f6' : `rgba(0,80,170,${alpha.toFixed(2)})`;
+    td.style.color = intensity>0.5 ? 'white' : '#374151';
+    td.textContent = v || '';
+    if(v>0) td.title=`${['Pon','Wt','Śr','Czw','Pt','Sob','Nd'][d]} ${String(h).padStart(2,'0')}:00 – ${v} wizyt`;
+    tr.appendChild(td);
+  }
+  tbody.appendChild(tr);
+}
+
+// ---- Wykres miesięczny ----
+new Chart(document.getElementById('monthlyChart'),{
+  type:'bar',
+  data:{
+    labels: months,
+    datasets:[
+      {label:'Wydatki (zł)',data:amounts,backgroundColor:'rgba(0,80,170,.75)',
+       yAxisID:'y',order:2},
+      {label:'Wizyty',data:visits,type:'line',borderColor:'#FFE000',
+       backgroundColor:'rgba(255,224,0,.2)',pointBackgroundColor:'#FFE000',
+       yAxisID:'y2',tension:.3,order:1,pointRadius:4},
+    ]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{position:'top'}},
+    scales:{
+      y:{ticks:{callback:v=>v+' zł'},grid:{color:'#f0f0f0'}},
+      y2:{position:'right',ticks:{stepSize:1},grid:{display:false}},
+      x:{grid:{display:false}}
+    }
+  }
+});
+
+// ---- Pie VAT ----
+new Chart(document.getElementById('vatChart'),{
+  type:'doughnut',
+  data:{
+    labels:vatLabels,
+    datasets:[{
+      data:vatAmounts,
+      backgroundColor:['#0050AA','#FFE000','#059669','#E60028','#6b7280'],
+      borderWidth:2,borderColor:'#fff'
+    }]
+  },
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{
+      legend:{position:'bottom'},
+      tooltip:{callbacks:{label:ctx=>`${ctx.label}: ${ctx.parsed.toFixed(2)} zł`}}
+    }
+  }
+});
+</script>
+
+{% endblock %}

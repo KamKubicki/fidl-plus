@@ -34,6 +34,21 @@
         </div>
         <div class="sub">na zakupy</div>
     </div>
+    <div class="stat-card" style="border-color:#7c3aed">
+        <div class="label">Kupony użyte</div>
+        <div class="value" style="color:#7c3aed">{{ coupon_stats.total_coupons }}</div>
+        <div class="sub">w {{ coupon_stats.receipts_with_coupon }} paragonach</div>
+    </div>
+    <div class="stat-card" style="border-color:#059669">
+        <div class="label">Zaoszczędzono</div>
+        <div class="value" style="color:#059669">{{ "%.2f"|format(coupon_stats.total_discount) }} zł</div>
+        <div class="sub">dzięki kuponom i promocjom</div>
+    </div>
+    <div class="stat-card" style="border-color:var(--muted)">
+        <div class="label">Śr. przerwa</div>
+        <div class="value" style="color:var(--muted);font-size:1.3rem;">{{ "%.1f"|format(stats.avg_gap) }} dni</div>
+        <div class="sub">między zakupami</div>
+    </div>
 </div>
 {% else %}
 <div class="alert alert-info">

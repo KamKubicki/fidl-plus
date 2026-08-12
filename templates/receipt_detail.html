@@ -35,6 +35,24 @@
     </div>
 </div>
 
+{% if coupons %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2>Użyte kupony</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-top:.5rem;">
+        {% for c in coupons %}
+        <div style="background:#f3e8ff;border:1px solid #d8b4fe;border-radius:8px;padding:.5rem 1rem;">
+            <div style="font-weight:600;font-size:.9rem;color:#7c3aed;">{{ c.get('couponTitle') or c.get('title','?') }}</div>
+            {% if c.get('couponDescription') or c.get('discount') %}
+            <div style="font-size:.8rem;color:#6b7280;margin-top:.1rem;">
+                {{ c.get('couponDescription') or c.get('discount','') }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <!-- Produkty -->
 <div class="card">
     <h2>Produkty</h2>

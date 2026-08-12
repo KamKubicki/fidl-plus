@@ -28,6 +28,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Filtry Jinja2
 from urllib.parse import quote
 templates.env.filters["urlencode"] = lambda s: quote(str(s), safe="")
+templates.env.filters["tojson"]    = lambda v: json.dumps(v, ensure_ascii=False)
 
 # Stan synchronizacji - współdzielony między wątkami
 sync_state = {
@@ -90,12 +91,170 @@ def get_stats(receipts: list) -> dict:
     for s in stores:
         store_counts[s] += 1
     fav_store = max(store_counts, key=store_counts.get) if store_counts else "-"
+
+    # Kupony i oszczędności
+    total_coupons = sum(len(r.get("couponsUsed", [])) for r in receipts)
+    total_discount = sum(parse_price(r.get("totalDiscount", 0)) for r in receipts)
+
+    # Średnia przerwa
+    from datetime import date as date_type
+    unique_dates = sorted({d for d in dates})
+    if len(unique_dates) > 1:
+        date_objs = [date_type.fromisoformat(d) for d in unique_dates]
+        gaps = [(date_objs[i+1]-date_objs[i]).days for i in range(len(date_objs)-1)]
+        avg_gap = sum(gaps) / len(gaps)
+    else:
+        avg_gap = 0
+
     return {
         "total_receipts": len(receipts),
         "total_spent": total_spent,
         "fav_store": fav_store,
         "date_from": min(dates) if dates else "-",
         "date_to": max(dates) if dates else "-",
+        "total_coupons": total_coupons,
+        "total_discount": total_discount,
+        "avg_gap": avg_gap,
+    }
+
+
+def get_insights(receipts: list) -> dict:
+    """Dane do strony /insights."""
+    from datetime import datetime as dt
+
+    # Heatmap: godzina x dzień tygodnia -> liczba wizyt
+    heatmap = defaultdict(int)
+    day_names = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]
+    for r in receipts:
+        try:
+            d = dt.fromisoformat(r["date"])
+            heatmap[f"{d.weekday()}_{d.hour}"] += 1
+        except Exception:
+            pass
+
+    # Wydatki miesięczne
+    monthly = defaultdict(float)
+    monthly_visits = defaultdict(int)
+    for r in receipts:
+        month = r.get("date", "")[:7]
+        if month:
+            monthly[month] += parse_price(r.get("totalAmount", 0))
+            monthly_visits[month] += 1
+    months_sorted = sorted(monthly.keys())
+
+    # Pie VAT
+    vat_labels = {"A": "23% VAT", "B": "8% VAT", "C": "5% VAT", "D": "0% VAT"}
+    vat_spend = defaultdict(float)
+    for r in receipts:
+        for t in r.get("taxes", []) or []:
+            key = t.get("taxGroupName", "?")
+            if key in vat_labels:
+                vat_spend[key] += parse_price(t.get("taxableAmount", 0))
+
+    # Top 10 najdroższych paragonów
+    top_receipts = sorted(
+        [r for r in receipts if r.get("id")],
+        key=lambda r: parse_price(r.get("totalAmount", 0)),
+        reverse=True
+    )[:10]
+
+    return {
+        "heatmap": dict(heatmap),
+        "day_names": day_names,
+        "months": months_sorted,
+        "monthly_amounts": [round(monthly[m], 2) for m in months_sorted],
+        "monthly_visits": [monthly_visits[m] for m in months_sorted],
+        "vat_labels": [vat_labels.get(k, k) for k in sorted(vat_spend)],
+        "vat_amounts": [round(vat_spend[k], 2) for k in sorted(vat_spend)],
+        "top_receipts": top_receipts,
+    }
+
+
+def get_top_products(receipts: list) -> dict:
+    """Dane do strony /top-products."""
+    product_count = defaultdict(float)
+    product_spend = defaultdict(float)
+    product_last_price = {}
+    price_history = defaultdict(list)
+
+    for r in receipts:
+        date = r.get("date", "")[:10]
+        for item in r.get("itemsLine", []):
+            name = item.get("name", "")
+            bc = item.get("codeInput", "")
+            if not name:
+                continue
+            qty = parse_price(item.get("quantity", 1)) or 1
+            p = parse_price(item.get("currentUnitPrice", 0))
+            product_count[name] += qty
+            product_spend[name] += p * qty
+            product_last_price[name] = p
+            if p > 0 and bc and len(bc) >= 8:
+                price_history[name].append((date, p))
+
+    # Ranking ilościowy
+    top_by_count = sorted(
+        [{"name": k, "count": int(v), "spend": round(product_spend[k], 2),
+          "last_price": round(product_last_price.get(k, 0), 2)}
+         for k, v in product_count.items() if v >= 2],
+        key=lambda x: -x["count"]
+    )[:20]
+
+    # Największa zmienność cen
+    volatility = []
+    for name, history in price_history.items():
+        if len(history) < 3:
+            continue
+        prices = [p for _, p in history]
+        mn, mx = min(prices), max(prices)
+        if mn == 0:
+            continue
+        pct = (mx - mn) / mn * 100
+        if pct < 5:
+            continue
+        # Pierwsza i ostatnia cena
+        history_sorted = sorted(history)
+        first_p = history_sorted[0][1]
+        last_p = history_sorted[-1][1]
+        volatility.append({
+            "name": name,
+            "min_price": round(mn, 2),
+            "max_price": round(mx, 2),
+            "first_price": round(first_p, 2),
+            "last_price": round(last_p, 2),
+            "change_pct": round(pct, 1),
+            "count": len(history),
+        })
+    volatility.sort(key=lambda x: -x["change_pct"])
+
+    return {
+        "top_by_count": top_by_count,
+        "volatility": volatility[:20],
+    }
+
+
+def get_coupon_stats(receipts: list) -> dict:
+    """Statystyki kuponów."""
+    from collections import Counter
+    coupon_titles = Counter()
+    total_discount = 0.0
+    receipts_with_coupon = 0
+
+    for r in receipts:
+        coupons = r.get("couponsUsed", [])
+        if coupons:
+            receipts_with_coupon += 1
+        for c in coupons:
+            title = c.get("couponTitle") or c.get("title") or "?"
+            coupon_titles[title] += 1
+        total_discount += parse_price(r.get("totalDiscount", 0))
+
+    return {
+        "total_coupons": sum(coupon_titles.values()),
+        "unique_coupons": len(coupon_titles),
+        "receipts_with_coupon": receipts_with_coupon,
+        "total_discount": round(total_discount, 2),
+        "top_coupons": coupon_titles.most_common(10),
     }
 
 
@@ -147,12 +306,13 @@ def search_products(receipts: list, query: str) -> list:
 async def index(request: Request):
     receipts = load_receipts()
     stats = get_stats(receipts)
-    # Ostatnie 20 paragonów posortowane po dacie
+    coupon_stats = get_coupon_stats(receipts)
     recent = sorted(receipts, key=lambda r: r.get("date", ""), reverse=True)[:20]
     logged_in = os.path.exists(TOKENS_FILE)
     return templates.TemplateResponse(request=request, name="index.html", context={
         "request": request,
         "stats": stats,
+        "coupon_stats": coupon_stats,
         "recent": recent,
         "logged_in": logged_in,
     })
@@ -219,7 +379,29 @@ async def receipt_detail(request: Request, receipt_id: str):
         "receipt": receipt,
         "items": items,
         "html_receipt": html_receipt,
+        "coupons": receipt.get("couponsUsed", []),
         "parse_price": parse_price,
+    })
+
+
+@app.get("/insights", response_class=HTMLResponse)
+async def insights(request: Request):
+    receipts = load_receipts()
+    data = get_insights(receipts)
+    return templates.TemplateResponse(request=request, name="insights.html", context={
+        "request": request,
+        **data,
+        "parse_price": parse_price,
+    })
+
+
+@app.get("/top-products", response_class=HTMLResponse)
+async def top_products(request: Request):
+    receipts = load_receipts()
+    data = get_top_products(receipts)
+    return templates.TemplateResponse(request=request, name="top_products.html", context={
+        "request": request,
+        **data,
     })
 
 
