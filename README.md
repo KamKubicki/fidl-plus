@@ -35,7 +35,7 @@ Pobiera dane przez mobilne API Lidl Plus i wyświetla je w przeglądarce.
 ## Instalacja
 
 ```bash
-git clone https://github.com/<twoj-user>/lidl-plus-dashboard
+git clone https://github.com/KamKubicki//lidl-plus-dashboard
 cd lidl-plus-dashboard
 
 python -m venv .venv
