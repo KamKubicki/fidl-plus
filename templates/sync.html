@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Pobierz paragony - Fidl Plus{% endblock %}
+{% block content %}
+
+<div style="max-width:500px;margin:3rem auto;">
+<h1>Pobierz paragony</h1>
+
+<div class="card">
+    <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
+        Pobierze wszystkie paragony z mobilnego API Lidl Plus i zapisze je
+        lokalnie. Przy dużej liczbie paragonów może potrwać kilka minut.
+    </p>
+
+    <button class="btn btn-primary" style="width:100%;padding:.8rem;"
+            hx-post="/sync/start"
+            hx-target="#sync-status"
+            hx-swap="outerHTML">
+        Rozpocznij pobieranie
+    </button>
+
+    <div id="sync-status" style="margin-top:1rem;"></div>
+</div>
+</div>
+
+{% endblock %}

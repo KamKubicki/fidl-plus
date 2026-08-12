@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}Historia cen: {{ name }} - Fidl Plus{% endblock %}
+{% block content %}
+
+<div style="margin-bottom:1rem;">
+    <a href="javascript:history.back()" style="color:var(--muted);font-size:.9rem;text-decoration:none;">← Wróć</a>
+</div>
+
+<h1>Historia cen: {{ name }}</h1>
+
+{% if not history %}
+<div class="alert alert-info">Brak danych dla produktu „{{ name }}".</div>
+{% else %}
+
+<!-- Statystyki -->
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="label">Zakupów</div>
+        <div class="value">{{ history|length }}</div>
+    </div>
+    <div class="stat-card" style="border-color:#059669">
+        <div class="label">Min. cena</div>
+        <div class="value" style="color:#059669">{{ "%.2f"|format(min_price) }} zł</div>
+    </div>
+    <div class="stat-card" style="border-color:var(--red)">
+        <div class="label">Max. cena</div>
+        <div class="value" style="color:var(--red)">{{ "%.2f"|format(max_price) }} zł</div>
+    </div>
+    <div class="stat-card" style="border-color:var(--yellow)">
+        <div class="label">Śr. cena</div>
+        <div class="value" style="color:#92400e">{{ "%.2f"|format(avg) }} zł</div>
+    </div>
+</div>
+
+<!-- Wykres -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2>Zmiana ceny w czasie</h2>
+    <div class="chart-container">
+        <canvas id="priceChart"></canvas>
+    </div>
+</div>
+
+<!-- Historia -->
+<div class="card">
+    <h2>Wszystkie zakupy</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Sklep</th>
+                    <th>Cena</th>
+                    <th>Zmiana</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for h in history %}
+            {% set i = loop.index0 %}
+            <tr>
+                <td class="date-cell">{{ h.date }}</td>
+                <td class="store-cell">{{ h.store }}</td>
+                <td class="amount">{{ "%.2f"|format(h.price) }} zł</td>
+                <td>
+                    {% if i > 0 %}
+                        {% set prev = history[i-1].price %}
+                        {% set diff = h.price - prev %}
+                        {% if diff > 0.005 %}
+                            <span class="price-up">↑ +{{ "%.2f"|format(diff) }} zł</span>
+                        {% elif diff < -0.005 %}
+                            <span class="price-down">↓ {{ "%.2f"|format(diff) }} zł</span>
+                        {% else %}
+                            <span style="color:var(--muted)">—</span>
+                        {% endif %}
+                    {% else %}
+                        <span style="color:var(--muted)">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if h.receipt_id %}
+                    <a href="/receipt/{{ h.receipt_id }}" class="badge badge-blue">Paragon</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const ctx = document.getElementById('priceChart').getContext('2d');
+const labels = {{ chart_labels|safe }};
+const prices = {{ chart_prices|safe }};
+const stores = {{ chart_stores|safe }};
+
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Cena (zł)',
+            data: prices,
+            borderColor: '#0050AA',
+            backgroundColor: 'rgba(0,80,170,.08)',
+            pointBackgroundColor: prices.map((p, i) => {
+                if (i === 0) return '#0050AA';
+                return p > prices[i-1] ? '#E60028' : p < prices[i-1] ? '#059669' : '#0050AA';
+            }),
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            tension: 0.3,
+            fill: true,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    afterLabel: (ctx) => `Sklep: ${stores[ctx.dataIndex]}`
+                }
+            }
+        },
+        scales: {
+            y: {
+                ticks: { callback: v => v.toFixed(2) + ' zł' },
+                grid: { color: '#f0f0f0' }
+            },
+            x: { grid: { display: false } }
+        }
+    }
+});
+</script>
+{% endif %}
+
+{% endblock %}

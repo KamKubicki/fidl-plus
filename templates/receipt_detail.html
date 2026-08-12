@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Paragon {{ receipt.get('date','')[:10] }} - Fidl Plus{% endblock %}
+{% block content %}
+
+<div style="margin-bottom:1rem;">
+    <a href="/receipts" style="color:var(--muted);font-size:.9rem;text-decoration:none;">← Powrót do paragonów</a>
+</div>
+
+<h1>Paragon z {{ receipt.get('date','')[:10] }}</h1>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
+    <div class="card">
+        <h2>Informacje</h2>
+        <table style="font-size:.9rem;">
+            <tr><td style="color:var(--muted);padding:.3rem .5rem .3rem 0;width:120px">Sklep</td>
+                <td style="padding:.3rem 0">{{ receipt.get('store',{}).get('name','-') }}</td></tr>
+            <tr><td style="color:var(--muted);padding:.3rem .5rem .3rem 0">Data</td>
+                <td style="padding:.3rem 0">{{ receipt.get('date','')[:16].replace('T',' ') }}</td></tr>
+            <tr><td style="color:var(--muted);padding:.3rem .5rem .3rem 0">Kasa</td>
+                <td style="padding:.3rem 0">{{ receipt.get('workstation','-') }}</td></tr>
+            <tr><td style="color:var(--muted);padding:.3rem .5rem .3rem 0">Produkty</td>
+                <td style="padding:.3rem 0">{{ items|length }} pozycji</td></tr>
+        </table>
+    </div>
+    <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;">
+        <div style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem;">Do zapłaty</div>
+        <div style="font-size:2.5rem;font-weight:800;color:var(--blue);">
+            {{ receipt.totalAmountString or ("%.2f"|format(receipt.totalAmount or 0)) }} zł
+        </div>
+        {% if receipt.get('totalDiscount') and parse_price(receipt.totalDiscount) > 0 %}
+        <div style="font-size:.9rem;color:#059669;margin-top:.3rem;">
+            Oszczędzono: {{ "%.2f"|format(parse_price(receipt.totalDiscount)) }} zł
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Produkty -->
+<div class="card">
+    <h2>Produkty</h2>
+
+    {% if items %}
+    <div class="table-wrap">
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>Nazwa</th>
+                    <th>Ilość</th>
+                    <th>Cena jedn.</th>
+                    <th>VAT</th>
+                    <th>Łącznie</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for item in items %}
+            <tr>
+                <td>
+                    <a href="/product?name={{ item.name|urlencode }}" style="color:var(--blue);text-decoration:none;font-weight:500;">
+                        {{ item.name }}
+                    </a>
+                </td>
+                <td>{{ item.get('quantity', '1') }}</td>
+                <td class="amount">{{ "%.2f"|format(item._price) }} zł</td>
+                <td><span class="badge badge-blue">{{ item.get('taxGroupName','?') }}</span></td>
+                <td class="amount">
+                    {{ "%.2f"|format(item._price * item._qty) }} zł
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% elif html_receipt %}
+    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
+        Ten paragon jest dostępny tylko w formacie wydruku (starszy format API).
+    </p>
+    <div style="background:#f8f8f8;border-radius:8px;padding:1.5rem;overflow-x:auto;">
+        <style scoped>
+            pre { font-family: monospace; font-size:.85rem; line-height:1.5; white-space:pre-wrap; }
+            .css_bold { font-weight:bold }
+            .css_underline { text-decoration:underline }
+        </style>
+        {{ html_receipt|safe }}
+    </div>
+
+    {% else %}
+    <p style="color:var(--muted);">Brak szczegółów produktów dla tego paragonu.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

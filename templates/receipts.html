@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Paragony - Fidl Plus{% endblock %}
+{% block content %}
+
+<h1>Paragony <span style="font-size:1rem;font-weight:400;color:var(--muted)">({{ total }})</span></h1>
+
+<!-- Filtry -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <form method="get" action="/receipts">
+        <div style="display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end;">
+            <div>
+                <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:.3rem;">Sklep</label>
+                <select name="store" style="padding:.5rem .8rem;border:2px solid var(--border);border-radius:8px;font-size:.9rem;">
+                    <option value="">Wszystkie sklepy</option>
+                    {% for s in all_stores %}
+                    <option value="{{ s }}" {% if s == store %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:.3rem;">Od</label>
+                <input type="date" name="date_from" value="{{ date_from }}"
+                       style="padding:.5rem .8rem;border:2px solid var(--border);border-radius:8px;font-size:.9rem;">
+            </div>
+            <div>
+                <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:.3rem;">Do</label>
+                <input type="date" name="date_to" value="{{ date_to }}"
+                       style="padding:.5rem .8rem;border:2px solid var(--border);border-radius:8px;font-size:.9rem;">
+            </div>
+            <button class="btn btn-primary" type="submit">Filtruj</button>
+            <a href="/receipts" class="btn" style="background:var(--border);color:var(--text);">Reset</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Godzina</th>
+                    <th>Sklep</th>
+                    <th>Produkty</th>
+                    <th>Suma</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in receipts %}
+            <tr>
+                <td class="date-cell">{{ r.date[:10] if r.get('date') else '-' }}</td>
+                <td class="date-cell">{{ r.date[11:16] if r.get('date') and r.date|length > 10 else '-' }}</td>
+                <td class="store-cell">{{ r.get('store', {}).get('name', '-') }}</td>
+                <td><span class="badge badge-blue">{{ r.get('itemsLine', [])|length }} poz.</span></td>
+                <td class="amount">
+                    {{ r.totalAmountString or ("%.2f"|format(r.totalAmount or 0)) }} zł
+                </td>
+                <td>
+                    {% if r.get('id') %}
+                    <a href="/receipt/{{ r.id }}" class="badge badge-yellow">Szczegóły</a>
+                    {% else %}
+                    <span style="color:var(--muted);font-size:.8rem;">brak</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Paginacja -->
+    {% if pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="?page={{ page-1 }}&store={{ store }}&date_from={{ date_from }}&date_to={{ date_to }}">←</a>
+        {% endif %}
+
+        {% for p in range([1, page-3]|max, [pages+1, page+4]|min) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% else %}
+        <a href="?page={{ p }}&store={{ store }}&date_from={{ date_from }}&date_to={{ date_to }}">{{ p }}</a>
+        {% endif %}
+        {% endfor %}
+
+        {% if page < pages %}
+        <a href="?page={{ page+1 }}&store={{ store }}&date_from={{ date_from }}&date_to={{ date_to }}">→</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Szukaj produktu - Fidl Plus{% endblock %}
+{% block content %}
+
+<h1>Szukaj produktu</h1>
+
+<div class="card" style="margin-bottom:1.5rem;">
+    <form method="get" action="/search">
+        <div class="search-bar">
+            <input type="text" name="q" value="{{ q }}" placeholder="np. mleko, chleb, piwo, masło..." autofocus>
+            <button class="btn btn-primary" type="submit">Szukaj</button>
+        </div>
+    </form>
+</div>
+
+{% if q and not results %}
+<div class="alert alert-info">Nie znaleziono produktów pasujących do "<strong>{{ q }}</strong>".</div>
+{% endif %}
+
+{% if results %}
+<div class="card">
+    <h2>Wyniki dla „{{ q }}" <span style="font-weight:400;color:var(--muted)">({{ results|length }})</span></h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Produkt</th>
+                    <th>Zakupów</th>
+                    <th>Ostatnia cena</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in results %}
+            <tr>
+                <td style="font-weight:500;">{{ r.name }}</td>
+                <td><span class="badge badge-blue">{{ r.count }}×</span></td>
+                <td class="amount">{{ "%.2f"|format(r.last_price) }} zł</td>
+                <td>
+                    <a href="/product?name={{ r.name|urlencode }}" class="badge badge-yellow">
+                        Historia cen →
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if not q %}
+<div class="alert alert-info">
+    Wpisz nazwę produktu aby zobaczyć ile razy był kupowany i jak zmieniała się jego cena.
+</div>
+{% endif %}
+
+{% endblock %}

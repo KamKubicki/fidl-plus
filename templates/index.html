@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Fidl Plus{% endblock %}
+{% block content %}
+
+{% if not logged_in %}
+<div class="alert alert-warn">
+    Nie jesteś zalogowany. <a href="/login" style="color:var(--blue);font-weight:600;">Zaloguj się</a>, aby pobrać paragony.
+</div>
+{% endif %}
+
+<h1>Dashboard</h1>
+
+{% if stats %}
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="label">Paragony</div>
+        <div class="value">{{ stats.total_receipts }}</div>
+        <div class="sub">{{ stats.date_from }} – {{ stats.date_to }}</div>
+    </div>
+    <div class="stat-card" style="border-color:var(--yellow)">
+        <div class="label">Łączne wydatki</div>
+        <div class="value" style="color:#92400e">{{ "%.2f"|format(stats.total_spent) }} zł</div>
+        <div class="sub">wszystkie paragony</div>
+    </div>
+    <div class="stat-card" style="border-color:var(--red)">
+        <div class="label">Ulubiony sklep</div>
+        <div class="value" style="font-size:1rem; color:var(--red)">{{ stats.fav_store }}</div>
+        <div class="sub">najczęściej odwiedzany</div>
+    </div>
+    <div class="stat-card" style="border-color:#059669">
+        <div class="label">Śr. paragon</div>
+        <div class="value" style="color:#059669">
+            {{ "%.2f"|format(stats.total_spent / stats.total_receipts) }} zł
+        </div>
+        <div class="sub">na zakupy</div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-info">
+    Brak danych. <a href="/sync" style="color:var(--blue);font-weight:600;">Pobierz paragony</a> aby zacząć.
+</div>
+{% endif %}
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:2rem;">
+
+    <!-- Wyszukiwarka -->
+    <div class="card">
+        <h2>Szukaj produktu</h2>
+        <form action="/search" method="get">
+            <div class="search-bar">
+                <input type="text" name="q" placeholder="np. mleko, chleb, piwo..." autofocus>
+                <button class="btn btn-primary" type="submit">Szukaj</button>
+            </div>
+        </form>
+        <p style="font-size:.85rem;color:var(--muted)">
+            Wpisz nazwę produktu aby zobaczyć historię cen i zmiany.
+        </p>
+    </div>
+
+    <!-- Szybkie linki -->
+    <div class="card">
+        <h2>Szybkie akcje</h2>
+        <div style="display:flex;flex-direction:column;gap:.75rem;margin-top:.5rem;">
+            <a href="/receipts" class="btn btn-primary" style="text-align:center;text-decoration:none;">
+                Przeglądaj wszystkie paragony
+            </a>
+            <a href="/sync" class="btn btn-yellow" style="text-align:center;text-decoration:none;">
+                Pobierz nowe paragony
+            </a>
+            <a href="/login" style="text-align:center;font-size:.9rem;color:var(--muted);text-decoration:none;">
+                Zaloguj / odśwież token
+            </a>
+        </div>
+    </div>
+
+</div>
+
+<!-- Ostatnie paragony -->
+{% if recent %}
+<div class="card">
+    <h2>Ostatnie zakupy</h2>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Sklep</th>
+                    <th>Produkty</th>
+                    <th>Suma</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in recent %}
+            <tr>
+                <td class="date-cell">{{ r.date[:10] }}</td>
+                <td class="store-cell">{{ r.get('store', {}).get('name', '-') }}</td>
+                <td>
+                    <span class="badge badge-blue">{{ r.get('itemsLine', [])|length }} poz.</span>
+                </td>
+                <td class="amount">{{ r.totalAmountString or ("%.2f"|format(r.totalAmount or 0)) }} zł</td>
+                <td>
+                    {% if r.get('id') %}
+                    <a href="/receipt/{{ r.id }}" class="badge badge-yellow">Szczegóły</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div style="text-align:right;margin-top:1rem;">
+        <a href="/receipts" style="color:var(--blue);font-size:.9rem;font-weight:600;">
+            Zobacz wszystkie paragony →
+        </a>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}

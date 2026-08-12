@@ -1,0 +1,42 @@
+# Tokeny i sesje - NIE COMMITOWAĆ
+*_tokens.json
+lidl_tokens.json
+
+# Dane osobiste - NIE COMMITOWAĆ
+wszystkie_paragony_szczegoly.json
+paragony.json
+*.csv
+*.har
+*.pcap
+logowanie
+fresh_cookies
+akamai_cookies.txt
+
+# Pliki tymczasowe / debug
+debug_*.html
+debug_*.txt
+debug_*.py
+test
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Chrome profile logowania
+.lidl_chrome_profile/
+
+# Screenshoty - commitowane do repozytorium (docs/)
+# docs/screenshots/

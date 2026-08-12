@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Fidl Plus{% endblock %}</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --yellow: #FFE000;
+            --blue:   #0050AA;
+            --red:    #E60028;
+            --dark:   #1a1a2e;
+            --card:   #ffffff;
+            --bg:     #f4f5f7;
+            --text:   #1a1a2e;
+            --muted:  #6b7280;
+            --border: #e5e7eb;
+            --radius: 12px;
+            --shadow: 0 2px 8px rgba(0,0,0,.08);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+
+        /* NAV */
+        nav {
+            background: var(--blue);
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            height: 56px;
+            box-shadow: 0 2px 8px rgba(0,0,50,.2);
+        }
+        nav .logo {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--yellow);
+            text-decoration: none;
+            letter-spacing: -0.5px;
+        }
+        nav a {
+            color: rgba(255,255,255,.85);
+            text-decoration: none;
+            font-size: .9rem;
+            font-weight: 500;
+            padding: .25rem 0;
+            border-bottom: 2px solid transparent;
+            transition: color .15s, border-color .15s;
+        }
+        nav a:hover, nav a.active {
+            color: var(--yellow);
+            border-bottom-color: var(--yellow);
+        }
+        nav .spacer { flex: 1; }
+        nav .nav-btn {
+            background: var(--yellow);
+            color: var(--blue) !important;
+            border: none;
+            padding: .4rem 1rem;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: .85rem;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        /* LAYOUT */
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1.5rem; }
+        h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+
+        /* CARDS */
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+        }
+
+        /* STATS GRID */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: var(--card);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.2rem 1.5rem;
+            border-left: 4px solid var(--blue);
+        }
+        .stat-card .label {
+            font-size: .78rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            margin-bottom: .3rem;
+        }
+        .stat-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--blue);
+        }
+        .stat-card .sub {
+            font-size: .8rem;
+            color: var(--muted);
+            margin-top: .2rem;
+        }
+
+        /* TABLE */
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+        th {
+            text-align: left;
+            padding: .75rem 1rem;
+            background: var(--bg);
+            color: var(--muted);
+            font-size: .75rem;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            border-bottom: 2px solid var(--border);
+        }
+        td {
+            padding: .75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #f8f9ff; }
+        .amount { font-weight: 600; color: var(--blue); }
+        .date-cell { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+        .store-cell { font-size: .85rem; }
+
+        /* BADGE */
+        .badge {
+            display: inline-block;
+            padding: .2rem .6rem;
+            border-radius: 20px;
+            font-size: .75rem;
+            font-weight: 600;
+        }
+        .badge-blue { background: #dbeafe; color: var(--blue); }
+        .badge-yellow { background: #fef9c3; color: #92400e; }
+
+        /* SEARCH */
+        .search-bar {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: 1.5rem;
+        }
+        .search-bar input, .search-bar select {
+            flex: 1;
+            padding: .6rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: .9rem;
+            outline: none;
+            transition: border-color .15s;
+        }
+        .search-bar input:focus, .search-bar select:focus {
+            border-color: var(--blue);
+        }
+        .btn {
+            padding: .6rem 1.4rem;
+            border-radius: 8px;
+            border: none;
+            font-size: .9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity .15s;
+        }
+        .btn:hover { opacity: .85; }
+        .btn-primary { background: var(--blue); color: white; }
+        .btn-yellow { background: var(--yellow); color: var(--blue); }
+
+        /* PAGINATION */
+        .pagination {
+            display: flex;
+            gap: .5rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .pagination a, .pagination span {
+            padding: .4rem .9rem;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: .85rem;
+            text-decoration: none;
+            color: var(--text);
+        }
+        .pagination a:hover { background: var(--blue); color: white; border-color: var(--blue); }
+        .pagination .current { background: var(--blue); color: white; border-color: var(--blue); }
+
+        /* PRODUCT HISTORY */
+        .history-list { display: flex; flex-direction: column; gap: .5rem; margin-top: 1rem; }
+        .history-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: .7rem 1rem;
+            background: var(--bg);
+            border-radius: 8px;
+            font-size: .88rem;
+        }
+        .history-item .price { font-weight: 700; font-size: 1rem; color: var(--blue); }
+
+        /* STATUS */
+        .status-running {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            color: #92400e;
+        }
+        .status-ok {
+            background: #d1fae5;
+            border: 1px solid #6ee7b7;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            color: #065f46;
+            font-weight: 600;
+        }
+        .status-ok a { color: var(--blue); }
+
+        /* ALERT */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+        .alert-info { background: #dbeafe; color: var(--blue); }
+        .alert-warn { background: #fef3c7; color: #92400e; }
+
+        /* CHART */
+        .chart-container { position: relative; height: 300px; margin-top: 1rem; }
+
+        /* RECEIPT ITEMS */
+        .items-table td:last-child { text-align: right; }
+
+        /* LINK */
+        a.row-link { color: inherit; text-decoration: none; }
+        a.row-link:hover { color: var(--blue); text-decoration: underline; }
+
+        /* PRICE UP/DOWN */
+        .price-up   { color: var(--red); }
+        .price-down { color: #059669; }
+    </style>
+</head>
+<body>
+<nav>
+    <a href="/" class="logo">Fidl+</a>
+    <a href="/">Dashboard</a>
+    <a href="/receipts">Paragony</a>
+    <a href="/search">Szukaj produktu</a>
+    <div class="spacer"></div>
+    <a href="/sync" class="nav-btn">Odśwież dane</a>
+    <a href="/login" style="margin-left:.5rem; color:rgba(255,255,255,.7); font-size:.85rem;">Zaloguj</a>
+</nav>
+<div class="container">
+    {% block content %}{% endblock %}
+</div>
+</body>
+</html>

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Logowanie - Fidl Plus{% endblock %}
+{% block content %}
+
+<div style="max-width:500px;margin:3rem auto;">
+<h1>Logowanie do Lidl Plus</h1>
+
+<div class="card">
+    <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
+        Kliknij przycisk poniżej. Otworzy się okno Chrome — zaloguj się tam
+        swoim emailem i hasłem. Token zostanie przechwycony automatycznie.
+    </p>
+
+    <button class="btn btn-primary" style="width:100%;padding:.8rem;"
+            hx-post="/login/start"
+            hx-target="#login-status"
+            hx-swap="outerHTML">
+        Otwórz Chrome i zaloguj się
+    </button>
+
+    <div id="login-status" style="margin-top:1rem;"></div>
+</div>
+
+<div class="card" style="margin-top:1.5rem;">
+    <h2>Po zalogowaniu</h2>
+    <p style="color:var(--muted);font-size:.9rem;line-height:1.6;margin-bottom:1rem;">
+        Token jest ważny przez 1 godzinę. Aplikacja automatycznie go odświeża
+        używając refresh tokenu (ważnego 30 dni).
+    </p>
+    <a href="/sync" class="btn btn-yellow" style="text-decoration:none;display:inline-block;">
+        Pobierz paragony →
+    </a>
+</div>
+</div>
+
+{% endblock %}
