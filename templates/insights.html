@@ -73,12 +73,12 @@
 
 <script>
 // ---- Dane ----
-const heatmapData = {{ heatmap|tojson }};
-const months      = {{ months|tojson }};
-const amounts     = {{ monthly_amounts|tojson }};
-const visits      = {{ monthly_visits|tojson }};
-const vatLabels   = {{ vat_labels|tojson }};
-const vatAmounts  = {{ vat_amounts|tojson }};
+const heatmapData = {{ heatmap|tojson|safe }};
+const months      = {{ months|tojson|safe }};
+const amounts     = {{ monthly_amounts|tojson|safe }};
+const visits      = {{ monthly_visits|tojson|safe }};
+const vatLabels   = {{ vat_labels|tojson|safe }};
+const vatAmounts  = {{ vat_amounts|tojson|safe }};
 
 // ---- Heatmap ----
 const hours = Array.from({length:24},(_,i)=>i);
