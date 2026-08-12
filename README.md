@@ -38,7 +38,7 @@ Pobiera dane przez mobilne API Lidl Plus i wyświetla je w przeglądarce.
 git clone https://github.com/KamKubicki/fidl-plus.git
 cd fidl-plus
 
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
@@ -50,7 +50,7 @@ playwright install chromium
 ### 1. Zaloguj się do Lidl Plus
 
 ```bash
-python browser_login.py
+python3 browser_login.py
 ```
 
 Otworzy się okno Chrome z formularzem logowania Lidl Plus (Fidl Plus).
@@ -63,7 +63,7 @@ i zapisany do `lidl_tokens.json`.
 ### 2. Uruchom aplikację
 
 ```bash
-python app.py
+python3 app.py
 ```
 
 Aplikacja otworzy się automatycznie na `http://localhost:8000`.
