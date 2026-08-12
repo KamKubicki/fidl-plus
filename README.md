@@ -20,7 +20,7 @@ Pobiera dane przez mobilne API Lidl Plus i wyświetla je w przeglądarce.
 
 | Top produkty | Historia ceny |
 |---|---|
-| ![Top produkty](docs/screenshots/top_products.png) | ![Wykres](docs/screenshots/product_chart.png) |
+| ![Top produkty](docs/screenshots/top_products_v2.png) | ![Wykres](docs/screenshots/product_chart.png) |
 
 | Paragony | Szczegóły paragonu |
 |---|---|
