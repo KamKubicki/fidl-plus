@@ -29,6 +29,15 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 from urllib.parse import quote
 templates.env.filters["urlencode"] = lambda s: quote(str(s), safe="")
 
+# Stan synchronizacji - współdzielony między wątkami
+sync_state = {
+    "running": False,
+    "count": 0,
+    "total": 0,
+    "error": None,
+    "done": False,
+}
+
 TOKENS_FILE = "lidl_tokens.json"
 DATA_FILE = "wszystkie_paragony_szczegoly.json"
 
@@ -304,60 +313,123 @@ async def sync_page(request: Request):
 @app.post("/sync/start", response_class=HTMLResponse)
 async def sync_start():
     """Pobierz paragony z API w tle."""
+    if sync_state["running"]:
+        return HTMLResponse("""
+            <div id="sync-status" class="status-running"
+                 hx-get="/sync/status" hx-trigger="every 2s" hx-swap="outerHTML">
+                Synchronizacja już trwa...
+            </div>
+        """)
+
     def run_sync():
+        sync_state["running"] = True
+        sync_state["count"] = 0
+        sync_state["total"] = 0
+        sync_state["error"] = None
+        sync_state["done"] = False
         try:
             api = load_api()
             if not api:
+                sync_state["error"] = "Brak tokenów - zaloguj się najpierw."
                 return
-            # Spróbuj odświeżyć token
             try:
                 api.refresh_access_token()
                 api.save_tokens(TOKENS_FILE)
             except Exception:
                 pass
-            receipts = api.get_all_tickets(max_pages=50)
-            detailed = []
-            for i, ticket in enumerate(receipts):
-                tid = ticket.get("id")
-                if not tid:
-                    continue
-                try:
-                    detail = api.get_ticket_details(tid)
-                    detailed.append(detail)
-                except Exception:
-                    detailed.append(ticket)
-            save_receipts(detailed)
-        except Exception as e:
-            print(f"Sync error: {e}")
 
-    thread = threading.Thread(target=run_sync, daemon=True)
-    thread.start()
+            # Pobierz listę wszystkich paragonów
+            tickets = api.get_all_tickets(max_pages=100)
+            tickets = [t for t in tickets if t.get("id")]
+            sync_state["total"] = len(tickets)
+
+            # Wczytaj istniejące żeby nie pobierać ponownie
+            existing = {}
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, encoding="utf-8") as f:
+                    for r in json.load(f):
+                        if r.get("id"):
+                            existing[r["id"]] = r
+
+            detailed = []
+            for ticket in tickets:
+                tid = ticket["id"]
+                if tid in existing:
+                    detailed.append(existing[tid])
+                else:
+                    try:
+                        detail = api.get_ticket_details(tid)
+                        detailed.append(detail)
+                    except Exception:
+                        detailed.append(ticket)
+                sync_state["count"] = len(detailed)
+                # Zapisuj co 10 paragonów żeby status był aktualny
+                if len(detailed) % 10 == 0:
+                    save_receipts(detailed)
+
+            save_receipts(detailed)
+            sync_state["done"] = True
+
+        except Exception as e:
+            sync_state["error"] = str(e)
+        finally:
+            sync_state["running"] = False
+
+    threading.Thread(target=run_sync, daemon=True).start()
     return HTMLResponse("""
         <div id="sync-status" class="status-running"
-             hx-get="/sync/status" hx-trigger="every 3s" hx-swap="outerHTML">
-            Pobieranie paragonów... to może chwilę potrwać.
+             hx-get="/sync/status" hx-trigger="every 2s" hx-swap="outerHTML">
+            Pobieranie paragonów...
         </div>
     """)
 
 
 @app.get("/sync/status", response_class=HTMLResponse)
 async def sync_status():
-    receipts = load_receipts()
-    count = len(receipts)
-    if count > 0:
-        mtime = os.path.getmtime(DATA_FILE)
-        age = datetime.now().timestamp() - mtime
-        if age < 60:
-            return HTMLResponse(f"""
-                <div id="sync-status" class="status-ok">
-                    Pobrano {count} paragonów.
-                    <a href="/">Przejdź do dashboardu</a>
+    if sync_state.get("error"):
+        return HTMLResponse(f"""
+            <div id="sync-status" class="alert alert-warn">
+                Błąd: {sync_state["error"]}
+            </div>
+        """)
+
+    if sync_state.get("done"):
+        count = sync_state["count"]
+        return HTMLResponse(f"""
+            <div id="sync-status" class="status-ok">
+                Pobrano {count} paragonów.
+                <a href="/">Przejdź do dashboardu</a>
+            </div>
+        """)
+
+    if sync_state.get("running"):
+        count = sync_state["count"]
+        total = sync_state["total"]
+        pct = int(count / total * 100) if total else 0
+        return HTMLResponse(f"""
+            <div id="sync-status" class="status-running"
+                 hx-get="/sync/status" hx-trigger="every 2s" hx-swap="outerHTML">
+                <div style="margin-bottom:.5rem">
+                    Pobieranie: {count} / {total} paragonów ({pct}%)
                 </div>
-            """)
-    return HTMLResponse(f"""
-        <div id="sync-status" class="status-running"
-             hx-get="/sync/status" hx-trigger="every 3s" hx-swap="outerHTML">
-            Pobieranie... (dotychczas: {count} paragonów)
+                <div style="background:#fde68a;border-radius:4px;height:8px;overflow:hidden;">
+                    <div style="background:#92400e;height:100%;width:{pct}%;transition:width .5s;"></div>
+                </div>
+            </div>
+        """)
+
+    # Nie trwa - pokaż ostatni wynik
+    count = len(load_receipts())
+    if count:
+        return HTMLResponse(f"""
+            <div id="sync-status" class="status-ok">
+                Dane aktualne: {count} paragonów w bazie.
+                <a href="/">Dashboard</a>
+            </div>
+        """)
+    return HTMLResponse("""
+        <div id="sync-status" style="color:var(--muted);font-size:.9rem">
+            Kliknij "Rozpocznij pobieranie" aby pobrać paragony.
         </div>
     """)
 

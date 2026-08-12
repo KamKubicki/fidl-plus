@@ -86,12 +86,17 @@ def login_with_browser() -> dict:
         print("Token zostanie przechwycony automatycznie.")
         print("=" * 60 + "\n")
 
-        for i in range(180):
+        # Czekaj na kod - sprawdzaj co 200ms zamiast co 1s
+        deadline = time.time() + 180
+        dots = 0
+        while time.time() < deadline:
             if code:
                 break
-            if i > 0 and i % 10 == 0:
-                print(f"   Czekam... ({i}s)")
-            time.sleep(1)
+            time.sleep(0.2)
+            dots += 1
+            if dots % 50 == 0:  # co ~10s
+                elapsed = int(time.time() - (deadline - 180))
+                print(f"   Czekam... ({elapsed}s)")
 
         browser.close()
 
