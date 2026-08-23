@@ -6,9 +6,11 @@
 <h1>Logowanie do Lidl Plus</h1>
 
 <div class="card">
+    <h2>Metoda 1: Automatyczne (Chrome)</h2>
     <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
         Kliknij przycisk poniżej. Otworzy się okno Chrome — zaloguj się tam
         swoim emailem i hasłem. Token zostanie przechwycony automatycznie.
+        <br><em style="font-size:.85rem;">Wymaga lokalnej instalacji z Chrome — nie działa w Docker.</em>
     </p>
 
     <button class="btn btn-primary" style="width:100%;padding:.8rem;"
@@ -19,6 +21,27 @@
     </button>
 
     <div id="login-status" style="margin-top:1rem;"></div>
+</div>
+
+<div class="card" style="margin-top:1.5rem;">
+    <h2>Metoda 2: Wgraj tokeny ręcznie (Docker / headless)</h2>
+    <p style="color:var(--muted);font-size:.9rem;line-height:1.6;margin-bottom:1rem;">
+        Jeśli używasz Dockera (Synology, homelab itp.), uruchom logowanie
+        raz lokalnie na komputerze z Chrome, a następnie wgraj wygenerowany
+        plik <code>lidl_tokens.json</code> tutaj.
+    </p>
+    <form hx-post="/login/token"
+          hx-target="#token-upload-status"
+          hx-swap="outerHTML"
+          hx-encoding="multipart/form-data"
+          style="display:flex;flex-direction:column;gap:.75rem;">
+        <input type="file" name="token_file" accept=".json"
+               style="font-size:.9rem;padding:.4rem;border:1px solid #d1d5db;border-radius:6px;">
+        <button type="submit" class="btn btn-yellow" style="padding:.7rem;">
+            Wgraj lidl_tokens.json
+        </button>
+    </form>
+    <div id="token-upload-status" style="margin-top:.75rem;"></div>
 </div>
 
 <div class="card" style="margin-top:1.5rem;">

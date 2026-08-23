@@ -39,8 +39,8 @@ sync_state = {
     "done": False,
 }
 
-TOKENS_FILE = "lidl_tokens.json"
-DATA_FILE = "wszystkie_paragony_szczegoly.json"
+TOKENS_FILE = os.environ.get("FIDL_TOKENS_FILE", "lidl_tokens.json")
+DATA_FILE = os.environ.get("FIDL_DATA_FILE", "wszystkie_paragony_szczegoly.json")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -79,6 +79,25 @@ def parse_price(val) -> float:
         return float(str(val).replace(",", "."))
     except (ValueError, TypeError):
         return 0.0
+
+
+def effective_unit_price(item: dict) -> float:
+    """
+    Zwraca rzeczywistą cenę jednostkową po uwzględnieniu naliczonych rabatów.
+    Rabaty (discounts) są podane jako kwota łączna dla całej pozycji,
+    więc dzielimy przez ilość żeby otrzymać cenę jednostkową.
+    """
+    unit_price = parse_price(item.get("currentUnitPrice", 0))
+    qty = parse_price(item.get("quantity", 1)) or 1.0
+    discounts = item.get("discounts", []) or []
+    total_discount = 0.0
+    for d in discounts:
+        total_discount += parse_price(d.get("amount", 0))
+    # total_discount jest ujemny (obniżka) lub dodatni - normalizujemy do kwoty obniżki
+    # W API Lidl amount bywa ujemny ("-1,50") lub dodatni
+    discount_per_unit = abs(total_discount) / qty
+    effective = unit_price - discount_per_unit
+    return max(effective, 0.0)
 
 
 def get_stats(receipts: list) -> dict:
@@ -185,7 +204,7 @@ def get_top_products(receipts: list) -> dict:
             if not name:
                 continue
             qty = parse_price(item.get("quantity", 1)) or 1
-            p = parse_price(item.get("currentUnitPrice", 0))
+            p = effective_unit_price(item)
             product_count[name] += qty
             product_spend[name] += p * qty
             product_last_price[name] = p
@@ -271,7 +290,7 @@ def get_product_history(receipts: list, name_query: str) -> list:
                 history.append({
                     "date": date,
                     "name": item_name,
-                    "price": parse_price(item.get("currentUnitPrice", 0)),
+                    "price": effective_unit_price(item),
                     "store": store,
                     "receipt_id": receipt.get("id", ""),
                 })
@@ -288,7 +307,7 @@ def search_products(receipts: list, query: str) -> list:
             name = item.get("name", "")
             if query_lower in name.lower():
                 key = name.lower()
-                price = parse_price(item.get("currentUnitPrice", 0))
+                price = effective_unit_price(item)
                 if key not in seen:
                     seen[key] = {"name": name, "last_price": price, "count": 1}
                 else:
@@ -368,7 +387,8 @@ async def receipt_detail(request: Request, receipt_id: str):
         return HTMLResponse("Paragon nie znaleziony", status_code=404)
     items = receipt.get("itemsLine", [])
     for item in items:
-        item["_price"] = parse_price(item.get("currentUnitPrice", 0))
+        item["_price"] = effective_unit_price(item)
+        item["_original_price"] = parse_price(item.get("currentUnitPrice", 0))
         item["_qty"] = parse_price(item.get("quantity", 1))
 
     # Paragon bez itemsLine - może mieć htmlPrintedReceipt
@@ -446,6 +466,37 @@ async def product(request: Request, name: str = Query("")):
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
     return templates.TemplateResponse(request=request, name="login.html", context={"request": request, "status": ""})
+
+
+@app.post("/login/token", response_class=HTMLResponse)
+async def login_upload_token(request: Request):
+    """Wgraj plik lidl_tokens.json - używane w trybie Docker/headless."""
+    from fastapi import Form, UploadFile, File
+    form = await request.form()
+    token_file = form.get("token_file")
+    if token_file and hasattr(token_file, "read"):
+        content = await token_file.read()
+        try:
+            tokens = json.loads(content)
+            os.makedirs(os.path.dirname(os.path.abspath(TOKENS_FILE)), exist_ok=True)
+            with open(TOKENS_FILE, "w", encoding="utf-8") as f:
+                json.dump(tokens, f, ensure_ascii=False, indent=2)
+            return HTMLResponse("""
+                <div id="token-upload-status" class="status-ok">
+                    Tokeny wgrane pomyślnie! <a href="/sync">Pobierz paragony</a>
+                </div>
+            """)
+        except Exception as e:
+            return HTMLResponse(f"""
+                <div id="token-upload-status" class="alert alert-warn">
+                    Błąd: nieprawidłowy plik tokenów ({e})
+                </div>
+            """)
+    return HTMLResponse("""
+        <div id="token-upload-status" class="alert alert-warn">
+            Wybierz plik lidl_tokens.json
+        </div>
+    """)
 
 
 @app.post("/login/start", response_class=HTMLResponse)
@@ -622,9 +673,16 @@ async def sync_status():
 
 if __name__ == "__main__":
     import webbrowser
+    docker_mode = "--docker" in sys.argv
+    host = os.environ.get("FIDL_HOST", "0.0.0.0")
+    port = int(os.environ.get("FIDL_PORT", "9000"))
     print("\n" + "="*50)
     print("  Fidl Plus - Web UI")
-    print("  http://localhost:8000")
+    if docker_mode:
+        print(f"  http://localhost:{port}")
+        print("  Tryb Docker - logowanie przez /login/token")
+    else:
+        print(f"  http://localhost:{port}")
+        webbrowser.open(f"http://localhost:{port}")
     print("="*50 + "\n")
-    webbrowser.open("http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(app, host=host, port=port, reload=False)

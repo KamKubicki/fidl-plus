@@ -75,14 +75,18 @@ class PriceAnalyzer:
             for discount in discounts:
                 try:
                     discount_amount = float(discount.get('amount', '0').replace(',', '.'))
-                    total_discount += discount_amount
+                    total_discount += abs(discount_amount)
                 except (ValueError, AttributeError):
                     pass
+
+            # Rzeczywista cena jednostkowa po rabacie
+            effective_unit_price = max(current_unit_price - total_discount / quantity, 0.0)
 
             # Zapisz informacje o produkcie
             self.products[product_name].append({
                 'date': ticket_date,
-                'price': current_unit_price,
+                'price': effective_unit_price,
+                'original_price': current_unit_price,
                 'quantity': quantity,
                 'ticket_id': ticket_id,
                 'original_amount': original_amount,

@@ -78,7 +78,14 @@
                     </a>
                 </td>
                 <td>{{ item.get('quantity', '1') }}</td>
-                <td class="amount">{{ "%.2f"|format(item._price) }} zł</td>
+                <td class="amount">
+                    {% if item._original_price > item._price %}
+                    <span style="text-decoration:line-through;color:var(--muted);font-size:.85rem;">{{ "%.2f"|format(item._original_price) }}</span>
+                    <span style="color:#059669;font-weight:600;"> {{ "%.2f"|format(item._price) }} zł</span>
+                    {% else %}
+                    {{ "%.2f"|format(item._price) }} zł
+                    {% endif %}
+                </td>
                 <td><span class="badge badge-blue">{{ item.get('taxGroupName','?') }}</span></td>
                 <td class="amount">
                     {{ "%.2f"|format(item._price * item._qty) }} zł

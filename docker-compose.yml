@@ -1,0 +1,18 @@
+services:
+  fidl-plus:
+    build: .
+    container_name: fidl-plus
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Katalog na dane: tokeny OAuth2 i cache paragonów
+      # Zmień ./data na dowolny katalog na hoście (np. /volume1/docker/fidl-plus na Synology)
+      - ./data:/data
+    environment:
+      - FIDL_TOKENS_FILE=/data/lidl_tokens.json
+      - FIDL_DATA_FILE=/data/wszystkie_paragony_szczegoly.json
+      - FIDL_HOST=0.0.0.0
+      - FIDL_PORT=8000
+    # Opcjonalnie - dostęp tylko z sieci lokalnej (usuń komentarz):
+    # network_mode: bridge
