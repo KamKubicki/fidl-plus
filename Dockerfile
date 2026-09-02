@@ -56,9 +56,13 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash fidl \
 
 ENV CHROME_BINARY=/usr/bin/chromium \
     DATA_DIR=/data \
-    NOVNC_PORT=6080
+    NOVNC_PORT=6080 \
+    HOME=/home/fidl \
+    PUID=1000 \
+    PGID=1000
 
-USER fidl
+# Starts as root only to fix ownership of the /data bind mount, then drops to
+# PUID:PGID via setpriv. Chromium never runs as root.
 
 VOLUME ["/data"]
 

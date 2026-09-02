@@ -1,0 +1,10 @@
+# Budowanie obrazu z lokalnych źródeł zamiast pobierania z GHCR.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+services:
+  fidl-plus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fidl-plus:local

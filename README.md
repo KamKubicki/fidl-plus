@@ -31,8 +31,18 @@ Pobiera dane przez mobilne API Lidl Plus i wyświetla je w przeglądarce.
 
 ## Uruchomienie w Dockerze (zalecane)
 
-Działa na dowolnym systemie – nie wymaga Chrome ani Pythona na hoście.
-Gotowy obraz jest budowany dla `linux/amd64` i `linux/arm64`.
+Nie musisz nic budować ani instalować Chrome'a. Gotowy obraz leży w GitHub
+Container Registry:
+
+```
+ghcr.io/kamkubicki/fidl-plus:latest
+```
+
+Jest to obraz **multi-arch** – pod jednym tagiem siedzą wersje `linux/amd64`
+(Synology, zwykłe PC, serwery) i `linux/arm64` (Apple Silicon, Raspberry Pi).
+Docker sam pobiera właściwą, więc niczego nie wybierasz.
+
+### Start w dwóch poleceniach
 
 ```bash
 mkdir fidl-plus && cd fidl-plus
@@ -40,48 +50,48 @@ curl -O https://raw.githubusercontent.com/KamKubicki/fidl-plus/master/docker-com
 docker compose up -d
 ```
 
-Albo z gita, jeśli chcesz budować u siebie:
+Pierwsze pobranie trwa chwilę – obraz waży ok. 2 GB, bo zawiera Chromium.
+
+### Logowanie
+
+1. Otwórz `http://localhost:8000/login`
+2. Kliknij **Otwórz przeglądarkę i zaloguj się**
+3. Otworzy się druga karta z obrazem przeglądarki działającej w kontenerze
+   (noVNC, port 6080). Zaloguj się w niej normalnie do Lidl Plus.
+4. Token zostanie przechwycony sam i zapisany w `./data/lidl_tokens.json`
+5. Wróć na `http://localhost:8000` i kliknij **Odśwież dane**
+
+Logujesz się ręcznie, w widocznym oknie, bo Lidl potrafi zażądać kodu SMS
+albo captchy – tryb w pełni automatyczny by na tym poległ.
+
+Jeśli Lidl zablokuje logowanie z adresu twojego serwera, na stronie `/login`
+jest **Metoda 2**: uruchom logowanie raz na komputerze z Chrome
+(`python3 browser_login.py`) i wgraj powstały `lidl_tokens.json` formularzem.
+
+### Aktualizacja
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+### Budowanie z własnych źródeł
 
 ```bash
 git clone https://github.com/KamKubicki/fidl-plus.git
 cd fidl-plus
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
-
-Wejdź na `http://localhost:8000/login` i kliknij **Zaloguj się**.
-Otworzy się druga karta z podglądem przeglądarki uruchomionej w kontenerze
-(noVNC, port 6080) – zaloguj się tam ręcznie do Lidl Plus. Token zostanie
-przechwycony automatycznie i zapisany w `./data/lidl_tokens.json`.
-
-Następnie kliknij **Odśwież dane**, żeby pobrać paragony.
-
-> **Uwaga na bezpieczeństwo.** Aplikacja nie ma uwierzytelniania, a noVNC
-> działa bez hasła. Kto dojdzie do portu 8000, zobaczy wszystkie paragony;
-> kto dojdzie do 6080, steruje przeglądarką wewnątrz twojej sieci.
-> Trzymaj oba porty w LAN i nie przekierowuj ich na routerze.
-
-Zmienne środowiskowe:
-
-| Zmienna | Domyślnie | Opis |
-|---|---|---|
-| `DATA_DIR` | `/data` | katalog na tokeny i paragony |
-| `NOVNC_PORT` | `6080` | port podglądu przeglądarki |
-| `NOVNC_URL` | – | pełny adres noVNC, gdy stoisz za reverse proxy |
-| `LOGIN_TIMEOUT` | `180` | ile sekund czekać na zalogowanie |
 
 ---
 
-## Synology / NAS przez Portainer
+## Synology NAS – krok po kroku
 
-Obraz jest publikowany do GitHub Container Registry przy każdym pushu
-na `master`:
+### Sposób 1: Container Manager (DSM 7.2 i nowszy)
 
-```
-ghcr.io/kamkubicki/fidl-plus:latest
-```
-
-W Portainerze: **Stacks → Add stack → Web editor**, wklej poniższe
-i kliknij *Deploy*.
+1. **File Station** → utwórz folder na dane, np. `docker/fidl-plus`
+2. **Container Manager** → **Projekt** → **Utwórz**
+3. Nazwa projektu: `fidl-plus`, ścieżka: folder z punktu 1
+4. Źródło: **Utwórz plik docker-compose.yml** i wklej:
 
 ```yaml
 services:
@@ -93,59 +103,85 @@ services:
       - "8000:8000"
       - "6080:6080"
     volumes:
-      - /volume1/docker/fidl-plus:/data   # dostosuj ścieżkę do swojego NAS-a
+      - /volume1/docker/fidl-plus/data:/data
     environment:
       TZ: Europe/Warsaw
-      DATA_DIR: /data
-      NOVNC_PORT: "6080"
+      PUID: "1026"     # patrz niżej
+      PGID: "100"
     shm_size: "1gb"
 ```
 
-Uwagi:
+5. Kliknij **Dalej** → **Gotowe**. Pierwsze uruchomienie potrwa kilka minut
+   (pobieranie 2 GB).
+6. Otwórz `http://IP-NAS-a:8000/login` i zaloguj się jak wyżej
 
-- **`shm_size: 1gb` jest wymagane.** Domyślne 64 MB na `/dev/shm` powoduje,
-  że Chromium wywala się przy starcie.
-- Katalog z wolumenu musi istnieć i być zapisywalny dla UID 1000 –
-  kontener działa jako użytkownik `fidl`, nie root.
-- Obraz waży ok. 2 GB (Chromium + fonty).
-- Aktualizacja: w Portainerze *Stacks → fidl-plus → Update* z zaznaczonym
-  **Re-pull image**.
+### Sposób 2: Portainer
 
-### Synology DSM – Container Manager
+**Stacks** → **Add stack** → **Web editor**, wklej ten sam YAML co wyżej
+i kliknij **Deploy the stack**.
 
-Bez Portainera, wprost w DSM:
+Aktualizacja: **Stacks** → `fidl-plus` → **Update** z zaznaczonym
+**Re-pull image**.
 
-1. **Container Manager** → **Project** → **Create**
-2. wskaż katalog z projektem (musi zawierać `docker-compose.yml`)
-3. upewnij się, że katalog `data` istnieje na NAS-ie
-4. uruchom projekt
+### Sposób 3: SSH
 
-### Gdy logowanie w przeglądarce zawiedzie
+```bash
+mkdir -p /volume1/docker/fidl-plus && cd /volume1/docker/fidl-plus
+curl -O https://raw.githubusercontent.com/KamKubicki/fidl-plus/master/docker-compose.yml
+docker compose up -d
+```
 
-Na stronie `/login` jest druga metoda: uruchom logowanie raz lokalnie na
-komputerze z Chrome (`python3 browser_login.py`) i wgraj powstały plik
-`lidl_tokens.json` przez formularz. Przydaje się, gdy Lidl zablokuje
-logowanie z adresu IP serwera.
+### PUID i PGID – jak ustalić właściwe
 
-Refresh token jest ważny 30 dni i aplikacja odświeża go przy każdej
-synchronizacji, więc czynność powtarza się rzadko.
+Synology nadaje użytkownikom nietypowe identyfikatory (często `1026`, `1027`).
+Kontener domyślnie używa `1000:1000`. Jeśli twój folder należy do kogoś innego,
+podaj właściwe wartości – sprawdzisz je przez SSH:
 
-### Zmiana portu
+```bash
+id twoja_nazwa_uzytkownika
+# uid=1026(kamil) gid=100(users)
+```
+
+Nie musisz nic robić ręcznie z uprawnieniami: kontener startuje jako root
+wyłącznie po to, żeby ustawić właściciela `/data`, po czym schodzi do
+`PUID:PGID`. Sama aplikacja i Chromium nigdy nie działają jako root.
+
+### Gdy coś nie działa
+
+| Objaw | Przyczyna |
+|---|---|
+| Kontener restartuje się w kółko | Brakuje `shm_size: "1gb"` – Chromium nie wstanie na domyślnych 64 MB |
+| `ERROR: /data is not writable` | Zły `PUID`/`PGID` – sprawdź `id` przez SSH |
+| Strona działa, noVNC nie | Port 6080 nie został przekierowany |
+| Puste okno noVNC | Odśwież kartę; Chromium wstaje kilka sekund |
+
+Logi: **Container Manager** → `fidl-plus` → **Dziennik**, albo
+`docker logs fidl-plus`.
+
+---
+
+## Konfiguracja
+
+| Zmienna | Domyślnie | Opis |
+|---|---|---|
+| `DATA_DIR` | `/data` | katalog na tokeny i paragony |
+| `PUID` / `PGID` | `1000` | właściciel plików w `/data` |
+| `NOVNC_PORT` | `6080` | port podglądu przeglądarki |
+| `NOVNC_URL` | – | pełny adres noVNC, gdy stoisz za reverse proxy |
+| `LOGIN_TIMEOUT` | `180` | ile sekund czekać na zalogowanie |
+| `TZ` | – | strefa czasowa, np. `Europe/Warsaw` |
+
+Zmiana portu aplikacji – w `docker-compose.yml`:
 
 ```yaml
 ports:
   - "8080:8000"
 ```
 
-### Bez rejestru, obrazem z pliku
-
-Jeśli wolisz nie korzystać z GHCR, zbuduj obraz pod architekturę NAS-a
-i wgraj go przez *Portainer → Images → Import*:
-
-```bash
-docker buildx build --platform linux/amd64 -t fidl-plus:latest --load .
-docker save fidl-plus:latest | gzip > fidl-plus-amd64.tar.gz
-```
+> **Uwaga na bezpieczeństwo.** Aplikacja nie ma uwierzytelniania, a noVNC
+> działa bez hasła. Kto dojdzie do portu 8000, zobaczy wszystkie paragony;
+> kto dojdzie do 6080, steruje przeglądarką wewnątrz twojej sieci.
+> Trzymaj oba porty w LAN i nie przekierowuj ich na routerze.
 
 ---
 
@@ -214,7 +250,8 @@ Pobieranie wszystkich paragonów może potrwać kilka minut.
 ├── receipt_parser.py       # Parser HTML paragonów + normalizacja nazw
 ├── price_analyzer.py       # Analiza zmian cen
 ├── Dockerfile              # Chromium + Xvfb + noVNC + aplikacja
-├── docker-compose.yml
+├── docker-compose.yml      # gotowy obraz z GHCR
+├── docker-compose.dev.yml  # nakładka do budowania lokalnie
 ├── docker-entrypoint.sh    # Start Xvfb / x11vnc / noVNC / uvicorn
 ├── lidl-callback-handler   # Handler schematu com.lidlplus.app://
 ├── templates/              # Szablony Jinja2
