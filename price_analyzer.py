@@ -2,10 +2,9 @@
 Analizator cen produktów z paragonów Lidl Plus
 """
 
+import statistics
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional
-import statistics
 
 
 class PriceAnalyzer:
@@ -14,7 +13,7 @@ class PriceAnalyzer:
     def __init__(self):
         self.products = defaultdict(list)  # product_name -> list of (date, price, quantity, ticket_id)
 
-    def add_tickets(self, tickets: List[Dict]):
+    def add_tickets(self, tickets: list[dict]):
         """
         Dodaje paragony do analizy
 
@@ -24,7 +23,7 @@ class PriceAnalyzer:
         for ticket in tickets:
             self._process_ticket(ticket)
 
-    def _process_ticket(self, ticket: Dict):
+    def _process_ticket(self, ticket: dict):
         """Przetwarza pojedynczy paragon"""
         ticket_id = ticket.get('id', '')
         date_str = ticket.get('date', '')
@@ -99,7 +98,7 @@ class PriceAnalyzer:
                 'is_weight': item.get('isWeight', False)
             })
 
-    def get_product_history(self, product_name: str) -> List[Dict]:
+    def get_product_history(self, product_name: str) -> list[dict]:
         """
         Pobiera historię cen dla produktu
 
@@ -115,7 +114,7 @@ class PriceAnalyzer:
         history = sorted(self.products[product_name], key=lambda x: x['date'])
         return history
 
-    def get_all_products(self) -> List[str]:
+    def get_all_products(self) -> list[str]:
         """
         Zwraca listę wszystkich produktów
 
@@ -124,7 +123,7 @@ class PriceAnalyzer:
         """
         return sorted(self.products.keys())
 
-    def get_price_statistics(self, product_name: str) -> Optional[Dict]:
+    def get_price_statistics(self, product_name: str) -> dict | None:
         """
         Oblicza statystyki cen dla produktu
 
@@ -164,7 +163,7 @@ class PriceAnalyzer:
 
         return stats
 
-    def get_price_changes(self, min_change_percent: float = 5.0) -> List[Dict]:
+    def get_price_changes(self, min_change_percent: float = 5.0) -> list[dict]:
         """
         Znajduje produkty z największymi zmianami cen
 
@@ -176,7 +175,7 @@ class PriceAnalyzer:
         """
         changes = []
 
-        for product_name in self.products.keys():
+        for product_name in self.products:
             stats = self.get_price_statistics(product_name)
 
             if stats and abs(stats['price_change_percent']) >= min_change_percent:
@@ -187,7 +186,7 @@ class PriceAnalyzer:
 
         return changes
 
-    def get_products_by_frequency(self, min_purchases: int = 3) -> List[Dict]:
+    def get_products_by_frequency(self, min_purchases: int = 3) -> list[dict]:
         """
         Znajduje najczęściej kupowane produkty
 
@@ -199,7 +198,7 @@ class PriceAnalyzer:
         """
         frequent_products = []
 
-        for product_name in self.products.keys():
+        for product_name in self.products:
             stats = self.get_price_statistics(product_name)
 
             if stats and stats['total_purchases'] >= min_purchases:
@@ -271,7 +270,7 @@ class PriceAnalyzer:
             f.write("=" * 80 + "\n\n")
 
             all_stats = []
-            for product_name in self.products.keys():
+            for product_name in self.products:
                 stats = self.get_price_statistics(product_name)
                 if stats:
                     all_stats.append(stats)

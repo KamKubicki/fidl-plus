@@ -1,0 +1,36 @@
+[project]
+name = "fidl-plus"
+version = "0.1.0"
+description = "Dashboard paragonów Lidl Plus"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = [".venv", "docs", "data"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",   # długość linii pilnuje formatter, nie lint
+    "B008",   # Depends()/Query() w domyślnych argumentach to idiom FastAPI
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]  # ustawienie DATA_DIR musi poprzedzać import app

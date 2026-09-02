@@ -5,9 +5,9 @@ Narzędzia do przetwarzania paragonów Lidl Plus:
 - normalize_receipts()   - ujednolica nazwy produktów w całym zbiorze
 """
 from __future__ import annotations
-from collections import defaultdict
-from typing import Optional
+
 import re
+from collections import defaultdict
 
 
 def _price_to_float(val: str) -> float:
@@ -28,7 +28,7 @@ _AMOUNT_LINE_RE = re.compile(r"^\s*[\d.,]+\s*(?:kg|g|szt\.?)?\s*[*x]\s*[\d.,]+",
 _DISCOUNT_AMOUNT_RE = re.compile(r"-\s*([\d]+[.,][\d]{2})\s*$")
 
 
-def _parse_discount_span(span) -> Optional[dict]:
+def _parse_discount_span(span) -> dict | None:
     """Zamienia <span class="discount"> na wpis zgodny z formatem API."""
     text = " ".join(span.get_text().split())
     match = _DISCOUNT_AMOUNT_RE.search(text)

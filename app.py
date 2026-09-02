@@ -11,11 +11,11 @@ import sys
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
+from urllib.parse import quote
 
 import uvicorn
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -27,7 +27,6 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Filtry Jinja2
-from urllib.parse import quote
 templates.env.filters["urlencode"] = lambda s: quote(str(s), safe="")
 templates.env.filters["tojson"]    = lambda v: json.dumps(v, ensure_ascii=False)
 
@@ -68,7 +67,7 @@ NOVNC_URL = os.getenv("NOVNC_URL", "")
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load_api() -> Optional[LidlPlusAPI]:
+def load_api() -> LidlPlusAPI | None:
     """Wczytaj API z zapisanych tokenów."""
     if not os.path.exists(TOKENS_FILE):
         return None
@@ -101,6 +100,10 @@ def parse_price(val) -> float:
         return float(str(val).replace(",", "."))
     except (ValueError, TypeError):
         return 0.0
+
+
+# Kwota w formacie "12.34" - odporna na to, że API zwraca raz float, raz "12,34".
+templates.env.filters["money"] = lambda v: f"{parse_price(v):.2f}"
 
 
 def item_discount(item: dict) -> float:
@@ -182,7 +185,7 @@ def get_stats(receipts: list) -> dict:
 
     # Średnia przerwa
     from datetime import date as date_type
-    unique_dates = sorted({d for d in dates})
+    unique_dates = sorted(set(dates))
     if len(unique_dates) > 1:
         date_objs = [date_type.fromisoformat(d) for d in unique_dates]
         gaps = [(date_objs[i+1]-date_objs[i]).days for i in range(len(date_objs)-1)]

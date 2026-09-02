@@ -15,7 +15,7 @@ import shutil
 import sys
 import tempfile
 import time
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 try:
     from playwright.sync_api import sync_playwright

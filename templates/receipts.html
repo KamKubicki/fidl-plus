@@ -54,7 +54,7 @@
                 <td class="store-cell">{{ r.get('store', {}).get('name', '-') }}</td>
                 <td><span class="badge badge-blue">{{ r.get('itemsLine', [])|length }} poz.</span></td>
                 <td class="amount">
-                    {{ r.totalAmountString or ("%.2f"|format(r.totalAmount or 0)) }} zł
+                    {{ r.totalAmountString or (r.totalAmount|money) }} zł
                 </td>
                 <td>
                     {% if r.get('id') %}

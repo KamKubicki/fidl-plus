@@ -33,7 +33,7 @@
     <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;">
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem;">Do zapłaty</div>
         <div style="font-size:2.5rem;font-weight:800;color:var(--blue);">
-            {{ receipt.totalAmountString or ("%.2f"|format(receipt.totalAmount or 0)) }} zł
+            {{ receipt.totalAmountString or (receipt.totalAmount|money) }} zł
         </div>
         {% if receipt.get('totalDiscount') and parse_price(receipt.totalDiscount) > 0 %}
         <div style="font-size:.9rem;color:#059669;margin-top:.3rem;">

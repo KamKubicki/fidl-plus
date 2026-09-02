@@ -37,7 +37,7 @@
           <td style="color:var(--muted);font-size:.85rem;">{{ loop.index }}</td>
           <td class="date-cell">{{ r.get('date','')[:10] }}</td>
           <td class="store-cell">{{ r.get('store',{}).get('name','-')[:30] }}</td>
-          <td class="amount">{{ r.totalAmountString or ("%.2f"|format(r.totalAmount or 0)) }} zł</td>
+          <td class="amount">{{ r.totalAmountString or (r.totalAmount|money) }} zł</td>
           <td>
             {% if r.get('id') %}
             <a href="/receipt/{{ r.id }}" class="badge badge-yellow">→</a>

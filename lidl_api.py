@@ -3,15 +3,14 @@ Lidl Plus API Client - interakcja z mobilnym API Lidl Plus
 Implementuje OAuth2 PKCE flow i pobieranie paragonów
 """
 
-import requests
 import base64
 import hashlib
-import secrets
 import json
+import secrets
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
-from urllib.parse import urlencode, parse_qs, urlparse
+from urllib.parse import urlencode
+
+import requests
 
 
 class LidlPlusAPI:
@@ -36,9 +35,9 @@ class LidlPlusAPI:
             country: Kod kraju (PL, DE, etc.)
         """
         self.country = country
-        self.access_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-        self.id_token: Optional[str] = None
+        self.access_token: str | None = None
+        self.refresh_token: str | None = None
+        self.id_token: str | None = None
         self.device_id = str(uuid.uuid4()).upper()
 
         self.session = requests.Session()
@@ -58,7 +57,7 @@ class LidlPlusAPI:
             "Brand": "Apple"
         })
 
-    def _generate_pkce_params(self) -> Dict[str, str]:
+    def _generate_pkce_params(self) -> dict[str, str]:
         """
         Generuje parametry PKCE dla OAuth2
 
@@ -108,7 +107,7 @@ class LidlPlusAPI:
         auth_url = f"{self.AUTH_BASE}/connect/authorize?{urlencode(params)}"
         return auth_url, state, pkce_params['code_verifier']
 
-    def exchange_code_for_token(self, authorization_code: str, code_verifier: str) -> Dict:
+    def exchange_code_for_token(self, authorization_code: str, code_verifier: str) -> dict:
         """
         Wymienia authorization code na access token
 
@@ -151,7 +150,7 @@ class LidlPlusAPI:
 
         return token_data
 
-    def refresh_access_token(self) -> Dict:
+    def refresh_access_token(self) -> dict:
         """
         Odświeża access token używając refresh token
 
@@ -189,7 +188,7 @@ class LidlPlusAPI:
 
         return token_data
 
-    def _get_auth_headers(self) -> Dict[str, str]:
+    def _get_auth_headers(self) -> dict[str, str]:
         """Zwraca nagłówki z autoryzacją"""
         if not self.access_token:
             raise ValueError("Brak access token. Najpierw zaloguj się.")
@@ -198,7 +197,7 @@ class LidlPlusAPI:
             "Authorization": f"Bearer {self.access_token}"
         }
 
-    def get_tickets(self, page: int = 1, only_favorite: bool = False) -> Dict:
+    def get_tickets(self, page: int = 1, only_favorite: bool = False) -> dict:
         """
         Pobiera listę paragonów
 
@@ -224,7 +223,7 @@ class LidlPlusAPI:
 
         return response.json()
 
-    def get_ticket_details(self, ticket_id: str) -> Dict:
+    def get_ticket_details(self, ticket_id: str) -> dict:
         """
         Pobiera szczegóły konkretnego paragonu (z produktami i cenami)
 
@@ -249,7 +248,7 @@ class LidlPlusAPI:
 
         return response.json()
 
-    def get_all_tickets(self, max_pages: int = 10) -> List[Dict]:
+    def get_all_tickets(self, max_pages: int = 10) -> list[dict]:
         """
         Pobiera wszystkie paragony (z paginacją)
 
@@ -284,7 +283,7 @@ class LidlPlusAPI:
 
         return all_tickets
 
-    def get_profile(self) -> Dict:
+    def get_profile(self) -> dict:
         """
         Pobiera profil użytkownika
 
@@ -318,7 +317,7 @@ class LidlPlusAPI:
     def load_tokens(self, filepath: str = "lidl_tokens.json"):
         """Wczytuje tokeny z pliku"""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 tokens = json.load(f)
 
             self.access_token = tokens.get('access_token')
