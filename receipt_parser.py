@@ -18,6 +18,35 @@ def _price_to_float(val: str) -> float:
         return 0.0
 
 
+# id="purchase_list_line_N"
+_LINE_ID_RE = re.compile(r"^purchase_list_line_\d+$")
+
+# Druga linia produktu, np. "        4 * 0.34 1.36 C" albo "   1,486kg x 12.99 19.3 C"
+_AMOUNT_LINE_RE = re.compile(r"^\s*[\d.,]+\s*(?:kg|g|szt\.?)?\s*[*x]\s*[\d.,]+", re.IGNORECASE)
+
+# Kwota rabatu na końcu linii, np. "   Lidl Plus kupon   -0,44"
+_DISCOUNT_AMOUNT_RE = re.compile(r"-\s*([\d]+[.,][\d]{2})\s*$")
+
+
+def _parse_discount_span(span) -> Optional[dict]:
+    """Zamienia <span class="discount"> na wpis zgodny z formatem API."""
+    text = " ".join(span.get_text().split())
+    match = _DISCOUNT_AMOUNT_RE.search(text)
+    if not match:
+        return None
+
+    amount = _price_to_float(match.group(1))
+    if amount <= 0:
+        return None
+
+    description = text[:match.start()].strip() or "Lidl Plus"
+    return {
+        "description": description,
+        "amount": str(amount).replace(".", ","),
+        "promotionId": span.get("data-promotion-id", ""),
+    }
+
+
 def parse_html_receipt(html: str) -> list[dict]:
     """
     Parsuje htmlPrintedReceipt i zwraca listę produktów
@@ -29,6 +58,13 @@ def parse_html_receipt(html: str) -> list[dict]:
         data-unit-price      - cena jednostkowa "3,55"
         data-art-quantity    - ilość (opcjonalnie, domyślnie 1)
         data-tax-type        - A/B/C/D
+
+    Produkt zajmuje dwie kolejne linie span.article (nazwa + "ilość * cena"),
+    po których mogą wystąpić linie span.discount z rabatami Lidl Plus:
+
+        <span class="article" ...>Bułka kajzerka 2</span>
+        <span class="article" ...>        4 * 0.34 1.36 C</span>
+        <span class="discount" ...>   Lidl Plus kupon        -0,44</span>
     """
     try:
         from bs4 import BeautifulSoup
@@ -36,40 +72,50 @@ def parse_html_receipt(html: str) -> list[dict]:
         return []
 
     soup = BeautifulSoup(html, "html.parser")
-    articles = soup.find_all("span", class_="article")
 
     items = []
-    # Spany idą parami: linia nieparzysta = nazwa, linia parzysta = ilość×cena
-    # Rozróżniamy po numerze w id: purchase_list_line_N - nieparzyste N to pierwsza linia
-    for span in articles:
+    current = None
+
+    for span in soup.find_all("span", id=_LINE_ID_RE):
+        classes = span.get("class", [])
+
+        if "discount" in classes:
+            # Rabat dotyczy ostatnio sparsowanego produktu
+            if current is None:
+                continue
+            discount = _parse_discount_span(span)
+            if discount:
+                current["discounts"].append(discount)
+            continue
+
+        if "article" not in classes:
+            continue
+
         desc = span.get("data-art-description")
         if not desc:
             continue
 
-        # Wyciągnij numer linii z id="purchase_list_line_N"
-        span_id = span.get("id", "")
-        match = re.search(r"_(\d+)$", span_id)
-        if match and int(match.group(1)) % 2 == 0:
-            continue  # parzysta linia = duplikat z ilością, pomiń
+        # Druga linia produktu ("4 * 0.34 1.36 C") to duplikat - pomijamy.
+        if _AMOUNT_LINE_RE.match(span.get_text()):
+            continue
 
-        art_id     = span.get("data-art-id", "")
         unit_price = _price_to_float(span.get("data-unit-price", "0"))
         quantity   = _price_to_float(span.get("data-art-quantity", "1")) or 1.0
-        tax_type   = span.get("data-tax-type", "")
 
-        items.append({
+        current = {
             "name":              desc.strip(),
             "currentUnitPrice":  str(unit_price).replace(".", ","),
             "quantity":          str(int(quantity) if quantity == int(quantity) else quantity),
             "isWeight":          False,
             "originalAmount":    str(round(unit_price * quantity, 2)).replace(".", ","),
-            "taxGroupName":      tax_type,
-            "codeInput":         art_id,
+            "taxGroupName":      span.get("data-tax-type", ""),
+            "codeInput":         span.get("data-art-id", ""),
             "discounts":         [],
             "deposit":           None,
             "giftSerialNumber":  None,
             "_parsed_from_html": True,
-        })
+        }
+        items.append(current)
 
     return items
 

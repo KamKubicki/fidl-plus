@@ -69,7 +69,9 @@ class PriceAnalyzer:
             except (ValueError, AttributeError):
                 original_amount = current_unit_price * quantity
 
-            # Oblicz zniżkę jeśli była
+            # Oblicz zniżkę jeśli była.
+            # W API Lidl `amount` bywa zapisany jako "1,50" albo "-1,50",
+            # dlatego normalizujemy do wartości dodatniej (kwota obniżki).
             discounts = item.get('discounts', [])
             total_discount = 0.0
             for discount in discounts:
@@ -80,13 +82,16 @@ class PriceAnalyzer:
                     pass
 
             # Rzeczywista cena jednostkowa po rabacie
-            effective_unit_price = max(current_unit_price - total_discount / quantity, 0.0)
+            promo_unit_price = max(
+                (original_amount - total_discount) / quantity if quantity else 0.0,
+                0.0,
+            )
 
             # Zapisz informacje o produkcie
             self.products[product_name].append({
                 'date': ticket_date,
-                'price': effective_unit_price,
-                'original_price': current_unit_price,
+                'price': promo_unit_price,
+                'base_price': current_unit_price,
                 'quantity': quantity,
                 'ticket_id': ticket_id,
                 'original_amount': original_amount,

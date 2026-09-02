@@ -81,29 +81,72 @@ def parse_price(val) -> float:
         return 0.0
 
 
-def effective_unit_price(item: dict) -> float:
+def item_discount(item: dict) -> float:
     """
-    Zwraca rzeczywistą cenę jednostkową po uwzględnieniu naliczonych rabatów.
-    Rabaty (discounts) są podane jako kwota łączna dla całej pozycji,
-    więc dzielimy przez ilość żeby otrzymać cenę jednostkową.
+    Łączna kwota rabatu naliczonego na pozycji paragonu.
+
+    W API Lidl `amount` bywa zapisany raz jako "1,50", raz jako "-1,50",
+    dlatego normalizujemy do wartości dodatniej (kwota obniżki).
     """
-    unit_price = parse_price(item.get("currentUnitPrice", 0))
+    total = 0.0
+    for d in item.get("discounts", []) or []:
+        total += abs(parse_price(d.get("amount", 0)))
+    return total
+
+
+def item_original_amount(item: dict) -> float:
+    """
+    Kwota pozycji przed rabatem. Preferujemy `originalAmount` z API,
+    bo dla towarów na wagę cena jednostkowa × ilość się nie zgadza.
+    """
+    original = parse_price(item.get("originalAmount", 0))
+    if original > 0:
+        return original
     qty = parse_price(item.get("quantity", 1)) or 1.0
-    discounts = item.get("discounts", []) or []
-    total_discount = 0.0
-    for d in discounts:
-        total_discount += parse_price(d.get("amount", 0))
-    # total_discount jest ujemny (obniżka) lub dodatni - normalizujemy do kwoty obniżki
-    # W API Lidl amount bywa ujemny ("-1,50") lub dodatni
-    discount_per_unit = abs(total_discount) / qty
-    effective = unit_price - discount_per_unit
-    return max(effective, 0.0)
+    return parse_price(item.get("currentUnitPrice", 0)) * qty
+
+
+def item_prices(item: dict) -> tuple[float, float]:
+    """
+    Zwraca (cena_podstawowa, cena_promocyjna) za sztukę.
+
+    Rabaty są podane jako kwota łączna dla całej pozycji, więc dzielimy
+    przez ilość, żeby otrzymać cenę jednostkową.
+    """
+    qty = parse_price(item.get("quantity", 1)) or 1.0
+    if qty <= 0:
+        qty = 1.0
+    base = parse_price(item.get("currentUnitPrice", 0))
+    promo = max((item_original_amount(item) - item_discount(item)) / qty, 0.0)
+    return base, promo
+
+
+def receipt_discount(receipt: dict) -> float:
+    """
+    Rabat całego paragonu. Paragony sparsowane z HTML nie mają
+    `totalDiscount`, więc w takim wypadku sumujemy rabaty pozycji.
+    """
+    discount = parse_price(receipt.get("totalDiscount", 0))
+    if discount:
+        return abs(discount)
+    return sum(item_discount(i) for i in receipt.get("itemsLine", []) or [])
+
+
+def receipt_total(receipt: dict) -> float:
+    """
+    Kwota faktycznie zapłacona za paragon.
+
+    Uwaga: `totalAmount` z API jest już PO odliczeniu rabatów (zweryfikowane
+    na zbiorze paragonów: suma pozycji - rabaty == totalAmount). Odejmowanie
+    `totalDiscount` po raz drugi zaniżałoby wydatki.
+    """
+    return parse_price(receipt.get("totalAmount", 0))
 
 
 def get_stats(receipts: list) -> dict:
     if not receipts:
         return {}
-    total_spent = sum(parse_price(r.get("totalAmount", 0)) for r in receipts)
+    total_spent = sum(receipt_total(r) for r in receipts)
     dates = [r["date"][:10] for r in receipts if r.get("date")]
     stores = [r.get("store", {}).get("name", "") for r in receipts if r.get("store")]
     store_counts = defaultdict(int)
@@ -113,7 +156,7 @@ def get_stats(receipts: list) -> dict:
 
     # Kupony i oszczędności
     total_coupons = sum(len(r.get("couponsUsed", [])) for r in receipts)
-    total_discount = sum(parse_price(r.get("totalDiscount", 0)) for r in receipts)
+    total_discount = sum(receipt_discount(r) for r in receipts)
 
     # Średnia przerwa
     from datetime import date as date_type
@@ -151,13 +194,13 @@ def get_insights(receipts: list) -> dict:
         except Exception:
             pass
 
-    # Wydatki miesięczne
+    # Wydatki miesięczne (po odliczeniu rabatów)
     monthly = defaultdict(float)
     monthly_visits = defaultdict(int)
     for r in receipts:
         month = r.get("date", "")[:7]
         if month:
-            monthly[month] += parse_price(r.get("totalAmount", 0))
+            monthly[month] += receipt_total(r)
             monthly_visits[month] += 1
     months_sorted = sorted(monthly.keys())
 
@@ -170,10 +213,10 @@ def get_insights(receipts: list) -> dict:
             if key in vat_labels:
                 vat_spend[key] += parse_price(t.get("taxableAmount", 0))
 
-    # Top 10 najdroższych paragonów
+    # Top 10 najdroższych paragonów (po odliczeniu rabatów)
     top_receipts = sorted(
         [r for r in receipts if r.get("id")],
-        key=lambda r: parse_price(r.get("totalAmount", 0)),
+        key=receipt_total,
         reverse=True
     )[:10]
 
@@ -204,12 +247,12 @@ def get_top_products(receipts: list) -> dict:
             if not name:
                 continue
             qty = parse_price(item.get("quantity", 1)) or 1
-            p = effective_unit_price(item)
+            base_price, promo_price = item_prices(item)
             product_count[name] += qty
-            product_spend[name] += p * qty
-            product_last_price[name] = p
-            if p > 0 and bc and len(bc) >= 8:
-                price_history[name].append((date, p))
+            product_spend[name] += promo_price * qty
+            product_last_price[name] = promo_price
+            if base_price > 0 and bc and len(bc) >= 8:
+                price_history[name].append((date, promo_price))
 
     # Ranking ilościowy
     top_by_count = sorted(
@@ -266,7 +309,7 @@ def get_coupon_stats(receipts: list) -> dict:
         for c in coupons:
             title = c.get("couponTitle") or c.get("title") or "?"
             coupon_titles[title] += 1
-        total_discount += parse_price(r.get("totalDiscount", 0))
+        total_discount += receipt_discount(r)
 
     return {
         "total_coupons": sum(coupon_titles.values()),
@@ -287,10 +330,12 @@ def get_product_history(receipts: list, name_query: str) -> list:
         for item in receipt.get("itemsLine", []):
             item_name = item.get("name", "")
             if name_query_lower in item_name.lower():
+                base_price, promo_price = item_prices(item)
                 history.append({
                     "date": date,
                     "name": item_name,
-                    "price": effective_unit_price(item),
+                    "base_price": base_price,
+                    "promo_price": promo_price,
                     "store": store,
                     "receipt_id": receipt.get("id", ""),
                 })
@@ -307,12 +352,18 @@ def search_products(receipts: list, query: str) -> list:
             name = item.get("name", "")
             if query_lower in name.lower():
                 key = name.lower()
-                price = effective_unit_price(item)
+                base_price, promo_price = item_prices(item)
                 if key not in seen:
-                    seen[key] = {"name": name, "last_price": price, "count": 1}
+                    seen[key] = {
+                        "name": name,
+                        "base_price": base_price,
+                        "last_price": promo_price,
+                        "count": 1,
+                    }
                 else:
                     seen[key]["count"] += 1
-                    seen[key]["last_price"] = price
+                    seen[key]["base_price"] = base_price
+                    seen[key]["last_price"] = promo_price
     results = sorted(seen.values(), key=lambda x: x["count"], reverse=True)
     return results[:50]
 
@@ -387,9 +438,10 @@ async def receipt_detail(request: Request, receipt_id: str):
         return HTMLResponse("Paragon nie znaleziony", status_code=404)
     items = receipt.get("itemsLine", [])
     for item in items:
-        item["_price"] = effective_unit_price(item)
-        item["_original_price"] = parse_price(item.get("currentUnitPrice", 0))
+        item["_price"], item["_promo_price"] = item_prices(item)
         item["_qty"] = parse_price(item.get("quantity", 1))
+        item["_discount"] = item_discount(item)
+        item["_total"] = max(item_original_amount(item) - item["_discount"], 0.0)
 
     # Paragon bez itemsLine - może mieć htmlPrintedReceipt
     html_receipt = receipt.get("htmlPrintedReceipt") if not items else None
@@ -441,9 +493,9 @@ async def product(request: Request, name: str = Query("")):
     receipts = load_receipts()
     history = get_product_history(receipts, name) if name else []
 
-    # Dane do wykresu
+    # Dane do wykresu - cena promocyjna, czyli ta faktycznie zapłacona
     chart_labels = [h["date"] for h in history]
-    chart_prices = [h["price"] for h in history]
+    chart_prices = [h["promo_price"] for h in history]
     chart_stores = [h["store"] for h in history]
 
     avg = sum(chart_prices) / len(chart_prices) if chart_prices else 0
