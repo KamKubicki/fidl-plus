@@ -1,18 +1,23 @@
 services:
   fidl-plus:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+
     container_name: fidl-plus
     restart: unless-stopped
+
     ports:
-      - "8000:8000"
+      - "8000:8000"   # aplikacja
+      - "6080:6080"   # noVNC - podgląd przeglądarki przy logowaniu
+
     volumes:
-      # Katalog na dane: tokeny OAuth2 i cache paragonów
-      # Zmień ./data na dowolny katalog na hoście (np. /volume1/docker/fidl-plus na Synology)
       - ./data:/data
+
     environment:
-      - FIDL_TOKENS_FILE=/data/lidl_tokens.json
-      - FIDL_DATA_FILE=/data/wszystkie_paragony_szczegoly.json
-      - FIDL_HOST=0.0.0.0
-      - FIDL_PORT=8000
-    # Opcjonalnie - dostęp tylko z sieci lokalnej (usuń komentarz):
-    # network_mode: bridge
+      TZ: Europe/Warsaw
+      DATA_DIR: /data
+      NOVNC_PORT: "6080"
+
+    # Chromium potrzebuje więcej niż domyślne 64 MB na /dev/shm
+    shm_size: "1gb"

@@ -40,3 +40,6 @@ Thumbs.db
 
 # Screenshoty - commitowane do repozytorium (docs/)
 # docs/screenshots/
+
+# Dane runtime (Docker volume / lokalny katalog danych)
+data/

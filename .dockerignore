@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.pyo
+
+lidl_tokens.json
+wszystkie_paragony_szczegoly.json
+
+.fidl_chrome_profile
+data
+
+docs/screenshots

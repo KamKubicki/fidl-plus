@@ -1,0 +1,14 @@
+#!/bin/bash
+# Handler custom scheme com.lidlplus.app:// wywoływany przez xdg-open.
+# Zapisuje deep link OAuth do pliku, który odpytuje browser_login.py.
+set -u
+
+URL="${1:-}"
+CALLBACK_FILE="${CALLBACK_FILE:-/tmp/fidl-lidl-callback}"
+
+if [[ "$URL" == com.lidlplus.app://* ]]; then
+    printf '%s' "$URL" > "$CALLBACK_FILE"
+    exit 0
+fi
+
+exit 1

@@ -6,11 +6,42 @@
 <h1>Logowanie do Lidl Plus</h1>
 
 <div class="card">
-    <h2>Metoda 1: Automatyczne (Chrome)</h2>
+    <h2>Metoda 1: Zaloguj się w przeglądarce</h2>
+    {% if novnc_url or novnc_port %}
+    <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
+        Kliknij przycisk poniżej. Przeglądarka uruchomi się wewnątrz kontenera,
+        a jej okno otworzy się w nowej karcie (noVNC) — zaloguj się tam swoim
+        emailem i hasłem. Token zostanie przechwycony automatycznie.
+    </p>
+
+    <button class="btn btn-primary" style="width:100%;padding:.8rem;"
+            hx-post="/login/start"
+            hx-target="#login-status"
+            hx-swap="outerHTML"
+            onclick="window.open(novncUrl(), 'fidl-novnc');">
+        Otwórz przeglądarkę i zaloguj się
+    </button>
+
+    <p style="margin-top:1rem;font-size:.85rem;color:var(--muted);">
+        Karta nie otworzyła się?
+        <a href="#" onclick="window.open(novncUrl(), 'fidl-novnc');return false;">Otwórz podgląd ręcznie</a>
+    </p>
+
+    <script>
+        function novncUrl() {
+            {% if novnc_url %}
+            return {{ novnc_url|tojson }};
+            {% else %}
+            return window.location.protocol + '//' + window.location.hostname
+                 + ':{{ novnc_port }}/vnc.html?autoconnect=1&resize=scale';
+            {% endif %}
+        }
+    </script>
+    {% else %}
     <p style="color:var(--muted);margin-bottom:1.5rem;line-height:1.6;">
         Kliknij przycisk poniżej. Otworzy się okno Chrome — zaloguj się tam
         swoim emailem i hasłem. Token zostanie przechwycony automatycznie.
-        <br><em style="font-size:.85rem;">Wymaga lokalnej instalacji z Chrome — nie działa w Docker.</em>
+        <br><em style="font-size:.85rem;">Wymaga lokalnie zainstalowanego Chrome.</em>
     </p>
 
     <button class="btn btn-primary" style="width:100%;padding:.8rem;"
@@ -19,16 +50,17 @@
             hx-swap="outerHTML">
         Otwórz Chrome i zaloguj się
     </button>
+    {% endif %}
 
     <div id="login-status" style="margin-top:1rem;"></div>
 </div>
 
 <div class="card" style="margin-top:1.5rem;">
-    <h2>Metoda 2: Wgraj tokeny ręcznie (Docker / headless)</h2>
+    <h2>Metoda 2: Wgraj tokeny ręcznie</h2>
     <p style="color:var(--muted);font-size:.9rem;line-height:1.6;margin-bottom:1rem;">
-        Jeśli używasz Dockera (Synology, homelab itp.), uruchom logowanie
-        raz lokalnie na komputerze z Chrome, a następnie wgraj wygenerowany
-        plik <code>lidl_tokens.json</code> tutaj.
+        Awaryjnie, gdy logowanie w przeglądarce zawiedzie: uruchom je raz
+        lokalnie na komputerze z Chrome (<code>python3 browser_login.py</code>),
+        a następnie wgraj tutaj wygenerowany plik <code>lidl_tokens.json</code>.
     </p>
     <form hx-post="/login/token"
           hx-target="#token-upload-status"

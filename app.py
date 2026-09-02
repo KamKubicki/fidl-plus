@@ -39,8 +39,29 @@ sync_state = {
     "done": False,
 }
 
-TOKENS_FILE = os.environ.get("FIDL_TOKENS_FILE", "lidl_tokens.json")
-DATA_FILE = os.environ.get("FIDL_DATA_FILE", "wszystkie_paragony_szczegoly.json")
+# Katalog na dane. W Dockerze podmontowany wolumen /data.
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+TOKENS_FILE = os.path.join(DATA_DIR, "lidl_tokens.json")
+DATA_FILE = os.path.join(DATA_DIR, "wszystkie_paragony_szczegoly.json")
+
+# Zgodność wstecz: wcześniej pliki leżały w katalogu aplikacji. Jeśli w
+# DATA_DIR jeszcze ich nie ma, a stara kopia istnieje - używamy starej.
+for _name, _var in (("lidl_tokens.json", "TOKENS_FILE"),
+                    ("wszystkie_paragony_szczegoly.json", "DATA_FILE")):
+    if not os.path.exists(os.path.join(DATA_DIR, _name)):
+        _legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), _name)
+        if os.path.exists(_legacy):
+            print(f"Uwaga: używam {_legacy}. Przenieś plik do {DATA_DIR}/")
+            globals()[_var] = _legacy
+
+# Podgląd okna przeglądarki podczas logowania w Dockerze (noVNC).
+# NOVNC_PORT  - port na tym samym hoście co aplikacja (domyślnie w Dockerze 6080)
+# NOVNC_URL   - pełny adres, gdy aplikacja stoi za reverse proxy
+# Puste = brak noVNC (uruchomienie lokalne, okno Chrome otwiera się wprost).
+NOVNC_PORT = os.getenv("NOVNC_PORT", "")
+NOVNC_URL = os.getenv("NOVNC_URL", "")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -517,7 +538,12 @@ async def product(request: Request, name: str = Query("")):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"request": request, "status": ""})
+    return templates.TemplateResponse(request=request, name="login.html", context={
+        "request": request,
+        "status": "",
+        "novnc_port": NOVNC_PORT,
+        "novnc_url": NOVNC_URL,
+    })
 
 
 @app.post("/login/token", response_class=HTMLResponse)
