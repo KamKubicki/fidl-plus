@@ -6,7 +6,15 @@
     <a href="/receipts" style="color:var(--muted);font-size:.9rem;text-decoration:none;">← Powrót do paragonów</a>
 </div>
 
-<h1>Paragon z {{ receipt.get('date','')[:10] }}</h1>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:1rem;margin-bottom:1rem;">
+    <h1 style="margin:0;">Paragon z {{ receipt.get('date','')[:10] }}</h1>
+    {% if html_receipt %}
+    <a href="/receipt/{{ receipt.id }}/print" target="_blank"
+       class="btn btn-primary" style="text-decoration:none;white-space:nowrap;">
+        Oryginalny wydruk
+    </a>
+    {% endif %}
+</div>
 
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem;">
     <div class="card">
@@ -25,7 +33,7 @@
     <div class="card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;">
         <div style="font-size:.85rem;color:var(--muted);margin-bottom:.5rem;">Do zapłaty</div>
         <div style="font-size:2.5rem;font-weight:800;color:var(--blue);">
-            {{ receipt.totalAmountString or ("%.2f"|format(receipt.totalAmount or 0)) }} zł
+            {{ receipt.totalAmountString or (receipt.totalAmount|money) }} zł
         </div>
         {% if receipt.get('totalDiscount') and parse_price(receipt.totalDiscount) > 0 %}
         <div style="font-size:.9rem;color:#059669;margin-top:.3rem;">
@@ -65,6 +73,7 @@
                     <th>Nazwa</th>
                     <th>Ilość</th>
                     <th>Cena jedn.</th>
+                    <th>Cena promocyjna</th>
                     <th>VAT</th>
                     <th>Łącznie</th>
                 </tr>
@@ -78,17 +87,17 @@
                     </a>
                 </td>
                 <td>{{ item.get('quantity', '1') }}</td>
+                <td class="amount">{{ "%.2f"|format(item._price) }} zł</td>
                 <td class="amount">
-                    {% if item._original_price > item._price %}
-                    <span style="text-decoration:line-through;color:var(--muted);font-size:.85rem;">{{ "%.2f"|format(item._original_price) }}</span>
-                    <span style="color:#059669;font-weight:600;"> {{ "%.2f"|format(item._price) }} zł</span>
+                    {% if item._discount > 0 %}
+                    <span style="color:var(--red);font-weight:600;">{{ "%.2f"|format(item._promo_price) }} zł</span>
                     {% else %}
-                    {{ "%.2f"|format(item._price) }} zł
+                    <span style="color:var(--muted)">—</span>
                     {% endif %}
                 </td>
                 <td><span class="badge badge-blue">{{ item.get('taxGroupName','?') }}</span></td>
                 <td class="amount">
-                    {{ "%.2f"|format(item._price * item._qty) }} zł
+                    {{ "%.2f"|format(item._total) }} zł
                 </td>
             </tr>
             {% endfor %}
@@ -97,17 +106,10 @@
     </div>
 
     {% elif html_receipt %}
-    <p style="font-size:.85rem;color:var(--muted);margin-bottom:1rem;">
-        Ten paragon jest dostępny tylko w formacie wydruku (starszy format API).
+    <p style="color:var(--muted);">
+        Nie udało się odczytać pozycji z tego paragonu —
+        zobacz <a href="/receipt/{{ receipt.id }}/print" target="_blank">oryginalny wydruk</a>.
     </p>
-    <div style="background:#f8f8f8;border-radius:8px;padding:1.5rem;overflow-x:auto;">
-        <style scoped>
-            pre { font-family: monospace; font-size:.85rem; line-height:1.5; white-space:pre-wrap; }
-            .css_bold { font-weight:bold }
-            .css_underline { text-decoration:underline }
-        </style>
-        {{ html_receipt|safe }}
-    </div>
 
     {% else %}
     <p style="color:var(--muted);">Brak szczegółów produktów dla tego paragonu.</p>

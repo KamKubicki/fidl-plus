@@ -1,20 +1,22 @@
 """
-Fidl Plus - Web UI
-Uruchom: python app.py
-Otwórz:  http://localhost:8000
+Fidl Plus - web UI.
+
+Run:  python app.py
+Open: http://localhost:8000
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional
+from urllib.parse import quote
 
 import uvicorn
-from fastapi import FastAPI, Request, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -26,11 +28,10 @@ templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Filtry Jinja2
-from urllib.parse import quote
 templates.env.filters["urlencode"] = lambda s: quote(str(s), safe="")
 templates.env.filters["tojson"]    = lambda v: json.dumps(v, ensure_ascii=False)
 
-# Stan synchronizacji - współdzielony między wątkami
+# Sync progress - shared between the request and the worker thread
 sync_state = {
     "running": False,
     "count": 0,
@@ -39,15 +40,53 @@ sync_state = {
     "done": False,
 }
 
-TOKENS_FILE = os.environ.get("FIDL_TOKENS_FILE", "lidl_tokens.json")
-DATA_FILE = os.environ.get("FIDL_DATA_FILE", "wszystkie_paragony_szczegoly.json")
+# Data directory. Inside Docker this is the mounted /data volume.
+DATA_DIR = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_data_file(name: str, *legacy_names: str) -> str:
+    """
+    Path to a data file inside DATA_DIR.
+
+    Falls back to older locations and names so that an existing installation
+    keeps working after an upgrade: files used to live in the application
+    directory, and the receipt dataset used to have a Polish filename.
+    """
+    current = os.path.join(DATA_DIR, name)
+    if os.path.exists(current):
+        return current
+
+    for candidate in (
+        *(os.path.join(DATA_DIR, legacy) for legacy in legacy_names),
+        os.path.join(_APP_DIR, name),
+        *(os.path.join(_APP_DIR, legacy) for legacy in legacy_names),
+    ):
+        if os.path.exists(candidate):
+            print(f"Uwaga: używam {candidate}. Zmień nazwę na {current}")
+            return candidate
+
+    return current
+
+
+TOKENS_FILE = _resolve_data_file("lidl_tokens.json")
+DATA_FILE = _resolve_data_file("receipts.json", "wszystkie_paragony_szczegoly.json")
+
+# Browser preview during login inside Docker (noVNC).
+# NOVNC_PORT  - port on the same host as the app (6080 in the Docker image)
+# NOVNC_URL   - absolute address when the app sits behind a reverse proxy
+# Empty means no noVNC: running locally, Chrome opens directly on the desktop.
+NOVNC_PORT = os.getenv("NOVNC_PORT", "")
+NOVNC_URL = os.getenv("NOVNC_URL", "")
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load_api() -> Optional[LidlPlusAPI]:
-    """Wczytaj API z zapisanych tokenów."""
+def load_api() -> LidlPlusAPI | None:
+    """Build an API client from the saved tokens, refreshing them if needed."""
     if not os.path.exists(TOKENS_FILE):
         return None
     api = LidlPlusAPI(country="PL")
@@ -72,7 +111,7 @@ def save_receipts(receipts: list):
 
 
 def parse_price(val) -> float:
-    """Bezpieczna konwersja ceny (może być '4,39' lub 4.39)."""
+    """Safely convert a price, which may arrive as '4,39' or as 4.39."""
     if val is None:
         return 0.0
     try:
@@ -81,29 +120,76 @@ def parse_price(val) -> float:
         return 0.0
 
 
-def effective_unit_price(item: dict) -> float:
+# Money as "12.34" - tolerates the API returning either a float or "12,34".
+templates.env.filters["money"] = lambda v: f"{parse_price(v):.2f}"
+
+
+def item_discount(item: dict) -> float:
     """
-    Zwraca rzeczywistą cenę jednostkową po uwzględnieniu naliczonych rabatów.
-    Rabaty (discounts) są podane jako kwota łączna dla całej pozycji,
-    więc dzielimy przez ilość żeby otrzymać cenę jednostkową.
+    Total discount applied to a single receipt line.
+
+    W API Lidl `amount` bywa zapisany raz jako "1,50", raz jako "-1,50",
+    so normalize it to a positive number (the amount taken off).
     """
-    unit_price = parse_price(item.get("currentUnitPrice", 0))
+    total = 0.0
+    for d in item.get("discounts", []) or []:
+        total += abs(parse_price(d.get("amount", 0)))
+    return total
+
+
+def item_original_amount(item: dict) -> float:
+    """
+    Kwota pozycji przed rabatem. Preferujemy `originalAmount` z API,
+    because for goods sold by weight unit price times quantity does not add up.
+    """
+    original = parse_price(item.get("originalAmount", 0))
+    if original > 0:
+        return original
     qty = parse_price(item.get("quantity", 1)) or 1.0
-    discounts = item.get("discounts", []) or []
-    total_discount = 0.0
-    for d in discounts:
-        total_discount += parse_price(d.get("amount", 0))
-    # total_discount jest ujemny (obniżka) lub dodatni - normalizujemy do kwoty obniżki
-    # W API Lidl amount bywa ujemny ("-1,50") lub dodatni
-    discount_per_unit = abs(total_discount) / qty
-    effective = unit_price - discount_per_unit
-    return max(effective, 0.0)
+    return parse_price(item.get("currentUnitPrice", 0)) * qty
+
+
+def item_prices(item: dict) -> tuple[float, float]:
+    """
+    Return (base_price, promo_price) per unit.
+
+    Discounts are given as a total for the whole line, so divide by the
+    quantity to get a per-unit price.
+    """
+    qty = parse_price(item.get("quantity", 1)) or 1.0
+    if qty <= 0:
+        qty = 1.0
+    base = parse_price(item.get("currentUnitPrice", 0))
+    promo = max((item_original_amount(item) - item_discount(item)) / qty, 0.0)
+    return base, promo
+
+
+def receipt_discount(receipt: dict) -> float:
+    """
+    Discount for the whole receipt. Receipts parsed from HTML carry no
+    `totalDiscount`, so in that case sum the per-line discounts instead.
+    """
+    discount = parse_price(receipt.get("totalDiscount", 0))
+    if discount:
+        return abs(discount)
+    return sum(item_discount(i) for i in receipt.get("itemsLine", []) or [])
+
+
+def receipt_total(receipt: dict) -> float:
+    """
+    Amount actually paid for the receipt.
+
+    Note: `totalAmount` from the API is already NET of discounts - verified
+    across the full dataset, where sum(line amounts) - discounts == totalAmount.
+    Subtracting `totalDiscount` again would under-report spending.
+    """
+    return parse_price(receipt.get("totalAmount", 0))
 
 
 def get_stats(receipts: list) -> dict:
     if not receipts:
         return {}
-    total_spent = sum(parse_price(r.get("totalAmount", 0)) for r in receipts)
+    total_spent = sum(receipt_total(r) for r in receipts)
     dates = [r["date"][:10] for r in receipts if r.get("date")]
     stores = [r.get("store", {}).get("name", "") for r in receipts if r.get("store")]
     store_counts = defaultdict(int)
@@ -111,13 +197,13 @@ def get_stats(receipts: list) -> dict:
         store_counts[s] += 1
     fav_store = max(store_counts, key=store_counts.get) if store_counts else "-"
 
-    # Kupony i oszczędności
+    # Coupons and savings
     total_coupons = sum(len(r.get("couponsUsed", [])) for r in receipts)
-    total_discount = sum(parse_price(r.get("totalDiscount", 0)) for r in receipts)
+    total_discount = sum(receipt_discount(r) for r in receipts)
 
-    # Średnia przerwa
+    # Average gap between shopping trips
     from datetime import date as date_type
-    unique_dates = sorted({d for d in dates})
+    unique_dates = sorted(set(dates))
     if len(unique_dates) > 1:
         date_objs = [date_type.fromisoformat(d) for d in unique_dates]
         gaps = [(date_objs[i+1]-date_objs[i]).days for i in range(len(date_objs)-1)]
@@ -141,7 +227,7 @@ def get_insights(receipts: list) -> dict:
     """Dane do strony /insights."""
     from datetime import datetime as dt
 
-    # Heatmap: godzina x dzień tygodnia -> liczba wizyt
+    # Heatmap: hour x weekday -> number of visits
     heatmap = defaultdict(int)
     day_names = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"]
     for r in receipts:
@@ -151,13 +237,13 @@ def get_insights(receipts: list) -> dict:
         except Exception:
             pass
 
-    # Wydatki miesięczne
+    # Monthly spending (discounts already deducted)
     monthly = defaultdict(float)
     monthly_visits = defaultdict(int)
     for r in receipts:
         month = r.get("date", "")[:7]
         if month:
-            monthly[month] += parse_price(r.get("totalAmount", 0))
+            monthly[month] += receipt_total(r)
             monthly_visits[month] += 1
     months_sorted = sorted(monthly.keys())
 
@@ -170,10 +256,10 @@ def get_insights(receipts: list) -> dict:
             if key in vat_labels:
                 vat_spend[key] += parse_price(t.get("taxableAmount", 0))
 
-    # Top 10 najdroższych paragonów
+    # Top 10 most expensive receipts (discounts already deducted)
     top_receipts = sorted(
         [r for r in receipts if r.get("id")],
-        key=lambda r: parse_price(r.get("totalAmount", 0)),
+        key=receipt_total,
         reverse=True
     )[:10]
 
@@ -204,14 +290,14 @@ def get_top_products(receipts: list) -> dict:
             if not name:
                 continue
             qty = parse_price(item.get("quantity", 1)) or 1
-            p = effective_unit_price(item)
+            base_price, promo_price = item_prices(item)
             product_count[name] += qty
-            product_spend[name] += p * qty
-            product_last_price[name] = p
-            if p > 0 and bc and len(bc) >= 8:
-                price_history[name].append((date, p))
+            product_spend[name] += promo_price * qty
+            product_last_price[name] = promo_price
+            if base_price > 0 and bc and len(bc) >= 8:
+                price_history[name].append((date, promo_price))
 
-    # Ranking ilościowy
+    # Ranking by quantity bought
     top_by_count = sorted(
         [{"name": k, "count": int(v), "spend": round(product_spend[k], 2),
           "last_price": round(product_last_price.get(k, 0), 2)}
@@ -219,7 +305,7 @@ def get_top_products(receipts: list) -> dict:
         key=lambda x: -x["count"]
     )[:20]
 
-    # Największa zmienność cen
+    # Largest price swings
     volatility = []
     for name, history in price_history.items():
         if len(history) < 3:
@@ -253,7 +339,7 @@ def get_top_products(receipts: list) -> dict:
 
 
 def get_coupon_stats(receipts: list) -> dict:
-    """Statystyki kuponów."""
+    """Coupon usage statistics."""
     from collections import Counter
     coupon_titles = Counter()
     total_discount = 0.0
@@ -266,7 +352,7 @@ def get_coupon_stats(receipts: list) -> dict:
         for c in coupons:
             title = c.get("couponTitle") or c.get("title") or "?"
             coupon_titles[title] += 1
-        total_discount += parse_price(r.get("totalDiscount", 0))
+        total_discount += receipt_discount(r)
 
     return {
         "total_coupons": sum(coupon_titles.values()),
@@ -278,7 +364,7 @@ def get_coupon_stats(receipts: list) -> dict:
 
 
 def get_product_history(receipts: list, name_query: str) -> list:
-    """Zwróć historię cen produktu pasującego do zapytania."""
+    """Price history for every product matching the query."""
     name_query_lower = name_query.lower()
     history = []
     for receipt in receipts:
@@ -287,10 +373,12 @@ def get_product_history(receipts: list, name_query: str) -> list:
         for item in receipt.get("itemsLine", []):
             item_name = item.get("name", "")
             if name_query_lower in item_name.lower():
+                base_price, promo_price = item_prices(item)
                 history.append({
                     "date": date,
                     "name": item_name,
-                    "price": effective_unit_price(item),
+                    "base_price": base_price,
+                    "promo_price": promo_price,
                     "store": store,
                     "receipt_id": receipt.get("id", ""),
                 })
@@ -299,7 +387,7 @@ def get_product_history(receipts: list, name_query: str) -> list:
 
 
 def search_products(receipts: list, query: str) -> list:
-    """Znajdź unikalne produkty pasujące do zapytania."""
+    """Find unique products matching the query."""
     query_lower = query.lower()
     seen = {}
     for receipt in receipts:
@@ -307,12 +395,18 @@ def search_products(receipts: list, query: str) -> list:
             name = item.get("name", "")
             if query_lower in name.lower():
                 key = name.lower()
-                price = effective_unit_price(item)
+                base_price, promo_price = item_prices(item)
                 if key not in seen:
-                    seen[key] = {"name": name, "last_price": price, "count": 1}
+                    seen[key] = {
+                        "name": name,
+                        "base_price": base_price,
+                        "last_price": promo_price,
+                        "count": 1,
+                    }
                 else:
                     seen[key]["count"] += 1
-                    seen[key]["last_price"] = price
+                    seen[key]["base_price"] = base_price
+                    seen[key]["last_price"] = promo_price
     results = sorted(seen.values(), key=lambda x: x["count"], reverse=True)
     return results[:50]
 
@@ -362,7 +456,7 @@ async def receipts_list(
     pages = max(1, (total + per_page - 1) // per_page)
     receipts_page = receipts[(page - 1) * per_page : page * per_page]
 
-    # Lista sklepów do filtra
+    # Store list for the filter dropdown
     all_stores = sorted({r.get("store", {}).get("name", "") for r in load_receipts() if r.get("store")})
 
     return templates.TemplateResponse(request=request, name="receipts.html", context={
@@ -387,12 +481,14 @@ async def receipt_detail(request: Request, receipt_id: str):
         return HTMLResponse("Paragon nie znaleziony", status_code=404)
     items = receipt.get("itemsLine", [])
     for item in items:
-        item["_price"] = effective_unit_price(item)
-        item["_original_price"] = parse_price(item.get("currentUnitPrice", 0))
+        item["_price"], item["_promo_price"] = item_prices(item)
         item["_qty"] = parse_price(item.get("quantity", 1))
+        item["_discount"] = item_discount(item)
+        item["_total"] = max(item_original_amount(item) - item["_discount"], 0.0)
 
-    # Paragon bez itemsLine - może mieć htmlPrintedReceipt
-    html_receipt = receipt.get("htmlPrintedReceipt") if not items else None
+    # The original printout stays available even when itemsLine exists,
+    # because for HTML receipts itemsLine is derived from that very printout.
+    html_receipt = receipt.get("htmlPrintedReceipt")
 
     return templates.TemplateResponse(request=request, name="receipt_detail.html", context={
         "request": request,
@@ -401,6 +497,30 @@ async def receipt_detail(request: Request, receipt_id: str):
         "html_receipt": html_receipt,
         "coupons": receipt.get("couponsUsed", []),
         "parse_price": parse_price,
+    })
+
+
+@app.get("/receipt/{receipt_id}/print", response_class=HTMLResponse)
+async def receipt_print(request: Request, receipt_id: str):
+    """Oryginalny wydruk paragonu na osobnej stronie, gotowy do druku."""
+    receipts = load_receipts()
+    receipt = next((r for r in receipts if r.get("id") == receipt_id), None)
+    if not receipt:
+        return HTMLResponse("Paragon nie znaleziony", status_code=404)
+
+    html_receipt = receipt.get("htmlPrintedReceipt")
+    if not html_receipt:
+        return HTMLResponse("Ten paragon nie ma wersji do wydruku", status_code=404)
+
+    # Take just the <body> content so it can be embedded in our own page
+    # instead of serving a foreign document along with its <head> and styles.
+    match = re.search(r"<body[^>]*>(.*?)</body>", html_receipt, re.IGNORECASE | re.DOTALL)
+    body = match.group(1) if match else html_receipt
+
+    return templates.TemplateResponse(request=request, name="receipt_print.html", context={
+        "request": request,
+        "receipt": receipt,
+        "receipt_body": body,
     })
 
 
@@ -441,9 +561,9 @@ async def product(request: Request, name: str = Query("")):
     receipts = load_receipts()
     history = get_product_history(receipts, name) if name else []
 
-    # Dane do wykresu
+    # Chart data uses the promotional price, i.e. what was actually paid
     chart_labels = [h["date"] for h in history]
-    chart_prices = [h["price"] for h in history]
+    chart_prices = [h["promo_price"] for h in history]
     chart_stores = [h["store"] for h in history]
 
     avg = sum(chart_prices) / len(chart_prices) if chart_prices else 0
@@ -465,19 +585,30 @@ async def product(request: Request, name: str = Query("")):
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request):
-    return templates.TemplateResponse(request=request, name="login.html", context={"request": request, "status": ""})
+    return templates.TemplateResponse(request=request, name="login.html", context={
+        "request": request,
+        "status": "",
+        "novnc_port": NOVNC_PORT,
+        "novnc_url": NOVNC_URL,
+    })
 
 
 @app.post("/login/token", response_class=HTMLResponse)
 async def login_upload_token(request: Request):
-    """Wgraj plik lidl_tokens.json - używane w trybie Docker/headless."""
-    from fastapi import Form, UploadFile, File
+    """
+    Upload a lidl_tokens.json produced elsewhere.
+
+    Fallback for when the in-browser login cannot be completed on the server,
+    for example because Lidl blocks the login from that IP address.
+    """
     form = await request.form()
     token_file = form.get("token_file")
     if token_file and hasattr(token_file, "read"):
         content = await token_file.read()
         try:
             tokens = json.loads(content)
+            if not isinstance(tokens, dict) or "access_token" not in tokens:
+                raise ValueError("brak pola access_token")
             os.makedirs(os.path.dirname(os.path.abspath(TOKENS_FILE)), exist_ok=True)
             with open(TOKENS_FILE, "w", encoding="utf-8") as f:
                 json.dump(tokens, f, ensure_ascii=False, indent=2)
@@ -501,7 +632,7 @@ async def login_upload_token(request: Request):
 
 @app.post("/login/start", response_class=HTMLResponse)
 async def login_start(request: Request):
-    """Uruchom browser_login.py w tle i zwróć status."""
+    """Run browser_login.py in the background and return a status snippet."""
     def run_login():
         subprocess.run(
             [sys.executable, "browser_login.py"],
@@ -520,7 +651,7 @@ async def login_start(request: Request):
 @app.get("/login/status", response_class=HTMLResponse)
 async def login_status():
     if os.path.exists(TOKENS_FILE):
-        # Sprawdź czy token jest świeży (zmodyfikowany w ostatnich 5 min)
+        # Treat the token as fresh if it was written in the last 5 minutes
         mtime = os.path.getmtime(TOKENS_FILE)
         age = datetime.now().timestamp() - mtime
         if age < 300:
@@ -571,12 +702,12 @@ async def sync_start():
             except Exception:
                 pass
 
-            # Pobierz listę wszystkich paragonów
+            # Fetch the list of all receipts
             tickets = api.get_all_tickets(max_pages=100)
             tickets = [t for t in tickets if t.get("id")]
             sync_state["total"] = len(tickets)
 
-            # Wczytaj istniejące żeby nie pobierać ponownie
+            # Load what we already have so we do not download it again
             existing = {}
             if os.path.exists(DATA_FILE):
                 with open(DATA_FILE, encoding="utf-8") as f:
@@ -596,7 +727,7 @@ async def sync_start():
                     except Exception:
                         detailed.append(ticket)
                 sync_state["count"] = len(detailed)
-                # Zapisuj co 10 paragonów żeby status był aktualny
+                # Flush every 10 receipts so the progress bar stays current
                 if len(detailed) % 10 == 0:
                     save_receipts(detailed)
 
@@ -651,7 +782,7 @@ async def sync_status():
             </div>
         """)
 
-    # Nie trwa - pokaż ostatni wynik
+    # Not running - show the last result
     count = len(load_receipts())
     if count:
         return HTMLResponse(f"""

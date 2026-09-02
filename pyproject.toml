@@ -1,0 +1,36 @@
+[project]
+name = "fidl-plus"
+version = "0.1.0"
+description = "Lidl Plus receipts dashboard"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = [".venv", "docs", "data"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+]
+ignore = [
+    "E501",   # line length is the formatter's job, not the linter's
+    "B008",   # Depends()/Query() as default arguments is the FastAPI idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]  # DATA_DIR must be set before app is imported

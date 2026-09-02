@@ -49,7 +49,8 @@
                 <tr>
                     <th>Data</th>
                     <th>Sklep</th>
-                    <th>Cena</th>
+                    <th>Cena podstawowa</th>
+                    <th>Cena promocyjna</th>
                     <th>Zmiana</th>
                     <th></th>
                 </tr>
@@ -60,11 +61,12 @@
             <tr>
                 <td class="date-cell">{{ h.date }}</td>
                 <td class="store-cell">{{ h.store }}</td>
-                <td class="amount">{{ "%.2f"|format(h.price) }} zł</td>
+                <td class="amount">{{ "%.2f"|format(h.base_price) }} zł</td>
+                <td class="amount">{{ "%.2f"|format(h.promo_price) }} zł</td>
                 <td>
                     {% if i > 0 %}
-                        {% set prev = history[i-1].price %}
-                        {% set diff = h.price - prev %}
+                        {% set prev = history[i-1].promo_price %}
+                        {% set diff = h.promo_price - prev %}
                         {% if diff > 0.005 %}
                             <span class="price-up">↑ +{{ "%.2f"|format(diff) }} zł</span>
                         {% elif diff < -0.005 %}

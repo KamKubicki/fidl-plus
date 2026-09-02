@@ -1,17 +1,16 @@
 """
 Lidl Plus API Client - interakcja z mobilnym API Lidl Plus
-Implementuje OAuth2 PKCE flow i pobieranie paragonów
+Implements the OAuth2 PKCE flow and receipt retrieval.
 """
 
-import requests
 import base64
 import hashlib
-import secrets
 import json
+import secrets
 import uuid
-from datetime import datetime
-from typing import Dict, List, Optional
-from urllib.parse import urlencode, parse_qs, urlparse
+from urllib.parse import urlencode
+
+import requests
 
 
 class LidlPlusAPI:
@@ -36,16 +35,16 @@ class LidlPlusAPI:
             country: Kod kraju (PL, DE, etc.)
         """
         self.country = country
-        self.access_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-        self.id_token: Optional[str] = None
+        self.access_token: str | None = None
+        self.refresh_token: str | None = None
+        self.id_token: str | None = None
         self.device_id = str(uuid.uuid4()).upper()
 
         self.session = requests.Session()
         self._setup_headers()
 
     def _setup_headers(self):
-        """Konfiguracja domyślnych nagłówków jak w aplikacji mobilnej"""
+        """Set default headers so requests look like the mobile app."""
         self.session.headers.update({
             "User-Agent": "LidlSocialInternacional/16.40.20 (com.lidl.eci.lidl.plus; build:1378; iOS 17.3.1) Alamofire/5.10.2",
             "Accept": "*/*",
@@ -58,19 +57,19 @@ class LidlPlusAPI:
             "Brand": "Apple"
         })
 
-    def _generate_pkce_params(self) -> Dict[str, str]:
+    def _generate_pkce_params(self) -> dict[str, str]:
         """
         Generuje parametry PKCE dla OAuth2
 
         Returns:
             Dict z code_verifier i code_challenge
         """
-        # Generuj losowy code_verifier (43-128 znaków)
+        # Random code_verifier (43-128 characters)
         code_verifier = base64.urlsafe_b64encode(
             secrets.token_bytes(32)
         ).decode('utf-8').rstrip('=')
 
-        # Utwórz code_challenge (SHA256 hash code_verifier)
+        # code_challenge is the SHA256 hash of the code_verifier
         code_challenge = base64.urlsafe_b64encode(
             hashlib.sha256(code_verifier.encode('utf-8')).digest()
         ).decode('utf-8').rstrip('=')
@@ -82,7 +81,7 @@ class LidlPlusAPI:
 
     def get_authorization_url(self) -> tuple[str, str, str]:
         """
-        Generuje URL do autoryzacji (logowania w przeglądarce)
+Build the authorization URL used for the browser login.
 
         Returns:
             Tuple: (authorization_url, state, code_verifier)
@@ -108,7 +107,7 @@ class LidlPlusAPI:
         auth_url = f"{self.AUTH_BASE}/connect/authorize?{urlencode(params)}"
         return auth_url, state, pkce_params['code_verifier']
 
-    def exchange_code_for_token(self, authorization_code: str, code_verifier: str) -> Dict:
+    def exchange_code_for_token(self, authorization_code: str, code_verifier: str) -> dict:
         """
         Wymienia authorization code na access token
 
@@ -151,9 +150,9 @@ class LidlPlusAPI:
 
         return token_data
 
-    def refresh_access_token(self) -> Dict:
+    def refresh_access_token(self) -> dict:
         """
-        Odświeża access token używając refresh token
+Refresh the access token using the refresh token.
 
         Returns:
             Dict z nowymi tokenami
@@ -189,8 +188,8 @@ class LidlPlusAPI:
 
         return token_data
 
-    def _get_auth_headers(self) -> Dict[str, str]:
-        """Zwraca nagłówki z autoryzacją"""
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Authorization headers for API calls."""
         if not self.access_token:
             raise ValueError("Brak access token. Najpierw zaloguj się.")
 
@@ -198,9 +197,9 @@ class LidlPlusAPI:
             "Authorization": f"Bearer {self.access_token}"
         }
 
-    def get_tickets(self, page: int = 1, only_favorite: bool = False) -> Dict:
+    def get_tickets(self, page: int = 1, only_favorite: bool = False) -> dict:
         """
-        Pobiera listę paragonów
+Fetch a page of receipts.
 
         Args:
             page: Numer strony
@@ -224,20 +223,20 @@ class LidlPlusAPI:
 
         return response.json()
 
-    def get_ticket_details(self, ticket_id: str) -> Dict:
+    def get_ticket_details(self, ticket_id: str) -> dict:
         """
-        Pobiera szczegóły konkretnego paragonu (z produktami i cenami)
+Fetch a single receipt with its products and prices.
 
         Args:
             ticket_id: ID paragonu
 
         Returns:
-            Dict ze szczegółami paragonu, w tym itemsLine z produktami
+            Receipt details, including itemsLine with the products
         """
-        # WAŻNE: Szczegóły paragonów są w API v3, nie v2!
+        # IMPORTANT: receipt details live in API v3, not v2.
         url = f"{self.TICKETS_BASE}/api/v3/{self.country}/tickets/{ticket_id}"
 
-        # API v3 dla szczegółów paragonu wymaga innego nagłówka 'Accept-Language'
+        # The v3 detail endpoint needs a different 'Accept-Language' header
         headers = self._get_auth_headers()
         headers['Accept-Language'] = self.country.lower()
 
@@ -249,15 +248,15 @@ class LidlPlusAPI:
 
         return response.json()
 
-    def get_all_tickets(self, max_pages: int = 10) -> List[Dict]:
+    def get_all_tickets(self, max_pages: int = 10) -> list[dict]:
         """
-        Pobiera wszystkie paragony (z paginacją)
+Fetch every receipt, following pagination.
 
         Args:
             max_pages: Maksymalna liczba stron do pobrania
 
         Returns:
-            Lista wszystkich paragonów
+            All receipts
         """
         all_tickets = []
         page = 1
@@ -273,7 +272,7 @@ class LidlPlusAPI:
                 all_tickets.extend(tickets)
                 page += 1
 
-                # Sprawdź czy są kolejne strony
+                # Check whether more pages follow
                 total_count = result.get('totalCount', 0)
                 if len(all_tickets) >= total_count:
                     break
@@ -284,9 +283,9 @@ class LidlPlusAPI:
 
         return all_tickets
 
-    def get_profile(self) -> Dict:
+    def get_profile(self) -> dict:
         """
-        Pobiera profil użytkownika
+Fetch the user profile.
 
         Returns:
             Dict z danymi profilu
@@ -318,7 +317,7 @@ class LidlPlusAPI:
     def load_tokens(self, filepath: str = "lidl_tokens.json"):
         """Wczytuje tokeny z pliku"""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 tokens = json.load(f)
 
             self.access_token = tokens.get('access_token')

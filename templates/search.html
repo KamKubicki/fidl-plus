@@ -26,7 +26,8 @@
                 <tr>
                     <th>Produkt</th>
                     <th>Zakupów</th>
-                    <th>Ostatnia cena</th>
+                    <th>Cena podstawowa</th>
+                    <th>Cena promocyjna</th>
                     <th></th>
                 </tr>
             </thead>
@@ -35,6 +36,7 @@
             <tr>
                 <td style="font-weight:500;">{{ r.name }}</td>
                 <td><span class="badge badge-blue">{{ r.count }}×</span></td>
+                <td class="amount">{{ "%.2f"|format(r.base_price) }} zł</td>
                 <td class="amount">{{ "%.2f"|format(r.last_price) }} zł</td>
                 <td>
                     <a href="/product?name={{ r.name|urlencode }}" class="badge badge-yellow">

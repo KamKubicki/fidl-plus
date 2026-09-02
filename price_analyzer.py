@@ -1,46 +1,45 @@
 """
-Analizator cen produktów z paragonów Lidl Plus
+Product price analyser for Lidl Plus receipts.
 """
 
+import statistics
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Optional
-import statistics
 
 
 class PriceAnalyzer:
-    """Analizuje zmiany cen produktów z paragonów"""
+    """Analyses how product prices change across receipts."""
 
     def __init__(self):
         self.products = defaultdict(list)  # product_name -> list of (date, price, quantity, ticket_id)
 
-    def add_tickets(self, tickets: List[Dict]):
+    def add_tickets(self, tickets: list[dict]):
         """
-        Dodaje paragony do analizy
+        Add receipts to the analysis.
 
         Args:
-            tickets: Lista paragonów z API
+            tickets: receipts as returned by the API
         """
         for ticket in tickets:
             self._process_ticket(ticket)
 
-    def _process_ticket(self, ticket: Dict):
-        """Przetwarza pojedynczy paragon"""
+    def _process_ticket(self, ticket: dict):
+        """Process a single receipt."""
         ticket_id = ticket.get('id', '')
         date_str = ticket.get('date', '')
 
-        # Parsuj datę
+        # Parse the date
         try:
-            # Format: "2025-12-23T10:30:00" lub "2025-12-23T10:30:00+00:00"
+            # Format: "2025-12-23T10:30:00" or "2025-12-23T10:30:00+00:00"
             ticket_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         except (ValueError, AttributeError):
             ticket_date = datetime.now()
 
-        # Przetwórz produkty z paragonu
+        # Process the products on the receipt
         items = ticket.get('itemsLine', [])
 
         if not items:
-            # Brak szczegółów - prawdopodobnie to tylko lista paragonów bez szczegółów
+            # No line items - most likely a receipt list entry without details
             return
 
         for item in items:
@@ -48,12 +47,12 @@ class PriceAnalyzer:
             if not product_name:
                 continue
 
-            # Pobierz cenę i ilość (API zwraca jako string z przecinkiem!)
+            # Price and quantity arrive as strings with a decimal comma
             current_unit_price_str = item.get('currentUnitPrice', '0')
             quantity_str = item.get('quantity', '1')
             original_amount_str = item.get('originalAmount', '0')
 
-            # Konwertuj z formatu polskiego (przecinek) na float
+            # Convert from the comma decimal separator to float
             try:
                 current_unit_price = float(current_unit_price_str.replace(',', '.'))
             except (ValueError, AttributeError):
@@ -69,7 +68,8 @@ class PriceAnalyzer:
             except (ValueError, AttributeError):
                 original_amount = current_unit_price * quantity
 
-            # Oblicz zniżkę jeśli była
+            # Total discount on the line. In the Lidl API `amount` is written
+            # either as "1,50" or "-1,50", so normalize it to a positive number.
             discounts = item.get('discounts', [])
             total_discount = 0.0
             for discount in discounts:
@@ -79,14 +79,17 @@ class PriceAnalyzer:
                 except (ValueError, AttributeError):
                     pass
 
-            # Rzeczywista cena jednostkowa po rabacie
-            effective_unit_price = max(current_unit_price - total_discount / quantity, 0.0)
+            # Actual unit price after the discount
+            promo_unit_price = max(
+                (original_amount - total_discount) / quantity if quantity else 0.0,
+                0.0,
+            )
 
-            # Zapisz informacje o produkcie
+            # Record the purchase
             self.products[product_name].append({
                 'date': ticket_date,
-                'price': effective_unit_price,
-                'original_price': current_unit_price,
+                'price': promo_unit_price,
+                'base_price': current_unit_price,
                 'quantity': quantity,
                 'ticket_id': ticket_id,
                 'original_amount': original_amount,
@@ -94,15 +97,15 @@ class PriceAnalyzer:
                 'is_weight': item.get('isWeight', False)
             })
 
-    def get_product_history(self, product_name: str) -> List[Dict]:
+    def get_product_history(self, product_name: str) -> list[dict]:
         """
-        Pobiera historię cen dla produktu
+        Price history for a single product.
 
         Args:
-            product_name: Nazwa produktu
+            product_name: product name
 
         Returns:
-            Lista zakupów danego produktu posortowana po dacie
+            Purchases of that product, sorted by date
         """
         if product_name not in self.products:
             return []
@@ -110,16 +113,16 @@ class PriceAnalyzer:
         history = sorted(self.products[product_name], key=lambda x: x['date'])
         return history
 
-    def get_all_products(self) -> List[str]:
+    def get_all_products(self) -> list[str]:
         """
-        Zwraca listę wszystkich produktów
+        List every known product.
 
         Returns:
-            Lista nazw produktów
+            Product names
         """
         return sorted(self.products.keys())
 
-    def get_price_statistics(self, product_name: str) -> Optional[Dict]:
+    def get_price_statistics(self, product_name: str) -> dict | None:
         """
         Oblicza statystyki cen dla produktu
 
@@ -127,7 +130,7 @@ class PriceAnalyzer:
             product_name: Nazwa produktu
 
         Returns:
-            Dict ze statystykami (min, max, średnia, etc.)
+            Statistics: min, max, average and so on
         """
         history = self.get_product_history(product_name)
 
@@ -151,7 +154,7 @@ class PriceAnalyzer:
             'price_change_percent': ((history[-1]['price'] - history[0]['price']) / history[0]['price'] * 100) if history[0]['price'] > 0 else 0
         }
 
-        # Oblicz zmienność cen
+        # Price volatility
         if len(prices) > 1:
             stats['price_std_dev'] = statistics.stdev(prices)
         else:
@@ -159,48 +162,48 @@ class PriceAnalyzer:
 
         return stats
 
-    def get_price_changes(self, min_change_percent: float = 5.0) -> List[Dict]:
+    def get_price_changes(self, min_change_percent: float = 5.0) -> list[dict]:
         """
-        Znajduje produkty z największymi zmianami cen
+        Find the products whose prices moved the most.
 
         Args:
             min_change_percent: Minimalny procent zmiany ceny
 
         Returns:
-            Lista produktów z największymi zmianami
+            Products with the largest price changes
         """
         changes = []
 
-        for product_name in self.products.keys():
+        for product_name in self.products:
             stats = self.get_price_statistics(product_name)
 
             if stats and abs(stats['price_change_percent']) >= min_change_percent:
                 changes.append(stats)
 
-        # Sortuj po procentowej zmianie ceny (malejąco po wartości bezwzględnej)
+        # Sort by percentage change, descending by absolute value
         changes.sort(key=lambda x: abs(x['price_change_percent']), reverse=True)
 
         return changes
 
-    def get_products_by_frequency(self, min_purchases: int = 3) -> List[Dict]:
+    def get_products_by_frequency(self, min_purchases: int = 3) -> list[dict]:
         """
-        Znajduje najczęściej kupowane produkty
+        Find the most frequently bought products.
 
         Args:
-            min_purchases: Minimalna liczba zakupów
+            min_purchases: minimum number of purchases
 
         Returns:
-            Lista produktów posortowana po częstości zakupów
+            Products sorted by how often they were bought
         """
         frequent_products = []
 
-        for product_name in self.products.keys():
+        for product_name in self.products:
             stats = self.get_price_statistics(product_name)
 
             if stats and stats['total_purchases'] >= min_purchases:
                 frequent_products.append(stats)
 
-        # Sortuj po liczbie zakupów
+        # Sort by purchase count
         frequent_products.sort(key=lambda x: x['total_purchases'], reverse=True)
 
         return frequent_products
@@ -210,7 +213,7 @@ class PriceAnalyzer:
         Generuje raport tekstowy z analizy cen
 
         Args:
-            output_file: Ścieżka do pliku wyjściowego
+            output_file: path of the report file to write
         """
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write("=" * 80 + "\n")
@@ -223,7 +226,7 @@ class PriceAnalyzer:
             total_purchases = sum(len(items) for items in self.products.values())
             f.write(f"Całkowita liczba zakupów: {total_purchases}\n\n")
 
-            # Produkty z największymi zmianami cen
+            # Products with the largest price changes
             f.write("\n" + "=" * 80 + "\n")
             f.write("PRODUKTY Z NAJWIĘKSZYMI ZMIANAMI CEN (min. 5%)\n")
             f.write("=" * 80 + "\n\n")
@@ -241,7 +244,7 @@ class PriceAnalyzer:
             else:
                 f.write("Brak produktów ze znaczącymi zmianami cen.\n")
 
-            # Najczęściej kupowane produkty
+            # Most frequently bought products
             f.write("\n" + "=" * 80 + "\n")
             f.write("NAJCZĘŚCIEJ KUPOWANE PRODUKTY (min. 3 zakupy)\n")
             f.write("=" * 80 + "\n\n")
@@ -260,13 +263,13 @@ class PriceAnalyzer:
             else:
                 f.write("Brak produktów kupowanych wielokrotnie.\n")
 
-            # Statystyki dla wszystkich produktów
+            # Statistics for all products
             f.write("\n" + "=" * 80 + "\n")
             f.write("STATYSTYKI WSZYSTKICH PRODUKTÓW\n")
             f.write("=" * 80 + "\n\n")
 
             all_stats = []
-            for product_name in self.products.keys():
+            for product_name in self.products:
                 stats = self.get_price_statistics(product_name)
                 if stats:
                     all_stats.append(stats)
@@ -289,14 +292,14 @@ class PriceAnalyzer:
         Generuje raport CSV ze wszystkimi danymi
 
         Args:
-            output_file: Ścieżka do pliku CSV
+            output_file: path of the CSV file to write
         """
         import csv
 
         with open(output_file, 'w', encoding='utf-8', newline='') as f:
             writer = csv.writer(f)
 
-            # Nagłówki
+            # Header row
             writer.writerow([
                 'Produkt',
                 'Data zakupu',
