@@ -1,8 +1,8 @@
 services:
   fidl-plus:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # Gotowy obraz multi-arch: linux/amd64 (Synology, NAS, PC) oraz
+    # linux/arm64 (Apple Silicon, Raspberry Pi). Docker wybiera sam.
+    image: ghcr.io/kamkubicki/fidl-plus:latest
 
     container_name: fidl-plus
     restart: unless-stopped
