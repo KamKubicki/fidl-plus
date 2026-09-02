@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <title>Paragon {{ receipt.get('date','')[:10] }} - wydruk</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 2rem 1rem;
+            background: #f4f4f5;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+        .sheet {
+            width: 42ch;
+            margin: 0 auto;
+            background: #fff;
+            padding: 1.5rem 1rem;
+            border-radius: 6px;
+            box-shadow: 0 1px 4px rgba(0,0,0,.15);
+        }
+        .sheet img.logo { display: block; width: 90px; margin: 0 auto 1rem; }
+        .sheet pre, .sheet span { font-size: .82rem; line-height: 1.45; }
+        pre { font-family: inherit; white-space: pre-wrap; margin: 0; }
+        .css_bold { font-weight: bold }
+        .css_underline { text-decoration: underline }
+        .barcode {
+            margin-top: 1rem;
+            text-align: center;
+            font-size: .75rem;
+            letter-spacing: .05em;
+            color: #52525b;
+        }
+        .toolbar { text-align: center; margin-bottom: 1.5rem; }
+        .toolbar button, .toolbar a {
+            font: inherit;
+            font-size: .85rem;
+            padding: .45rem .9rem;
+            margin: 0 .25rem;
+            border: 1px solid #d4d4d8;
+            border-radius: 5px;
+            background: #fff;
+            color: #18181b;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        @media print {
+            body { background: #fff; padding: 0; }
+            .toolbar { display: none; }
+            .sheet { box-shadow: none; border-radius: 0; width: auto; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="toolbar">
+    <button onclick="window.print()">Drukuj</button>
+    <a href="/receipt/{{ receipt.id }}">Wróć do szczegółów</a>
+</div>
+
+<div class="sheet">
+    <img class="logo" src="/static/logo.png" alt="Lidl">
+    {{ receipt_body|safe }}
+    {% if receipt.get('barCode') %}
+    <div class="barcode">{{ receipt.barCode }}</div>
+    {% endif %}
+</div>
+
+</body>
+</html>

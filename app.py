@@ -5,6 +5,7 @@ Otwórz:  http://localhost:8000
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -464,8 +465,9 @@ async def receipt_detail(request: Request, receipt_id: str):
         item["_discount"] = item_discount(item)
         item["_total"] = max(item_original_amount(item) - item["_discount"], 0.0)
 
-    # Paragon bez itemsLine - może mieć htmlPrintedReceipt
-    html_receipt = receipt.get("htmlPrintedReceipt") if not items else None
+    # Oryginalny wydruk - dostępny też wtedy, gdy mamy itemsLine
+    # (dla paragonów z HTML itemsLine pochodzi właśnie z tego wydruku).
+    html_receipt = receipt.get("htmlPrintedReceipt")
 
     return templates.TemplateResponse(request=request, name="receipt_detail.html", context={
         "request": request,
@@ -474,6 +476,30 @@ async def receipt_detail(request: Request, receipt_id: str):
         "html_receipt": html_receipt,
         "coupons": receipt.get("couponsUsed", []),
         "parse_price": parse_price,
+    })
+
+
+@app.get("/receipt/{receipt_id}/print", response_class=HTMLResponse)
+async def receipt_print(request: Request, receipt_id: str):
+    """Oryginalny wydruk paragonu na osobnej stronie, gotowy do druku."""
+    receipts = load_receipts()
+    receipt = next((r for r in receipts if r.get("id") == receipt_id), None)
+    if not receipt:
+        return HTMLResponse("Paragon nie znaleziony", status_code=404)
+
+    html_receipt = receipt.get("htmlPrintedReceipt")
+    if not html_receipt:
+        return HTMLResponse("Ten paragon nie ma wersji do wydruku", status_code=404)
+
+    # Wyciągamy samą treść <body>, żeby osadzić ją we własnej stronie
+    # zamiast serwować obcy dokument z jego <head> i stylami.
+    match = re.search(r"<body[^>]*>(.*?)</body>", html_receipt, re.IGNORECASE | re.DOTALL)
+    body = match.group(1) if match else html_receipt
+
+    return templates.TemplateResponse(request=request, name="receipt_print.html", context={
+        "request": request,
+        "receipt": receipt,
+        "receipt_body": body,
     })
 
 
