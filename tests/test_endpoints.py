@@ -88,7 +88,7 @@ def test_login_page_with_novnc_shows_preview_button(client, monkeypatch):
 def test_amounts_render_when_api_returns_a_string(client, api_receipt, tmp_path, monkeypatch):
     """
     REGRESSION: templates used "%.2f"|format(totalAmount), which crashed the
-    page whenever the API returned the amount as "49,80" instead of a number.
+    page whenever the API returned the amount as a string.
     """
     api_receipt["totalAmount"] = "49,80"
     dataset = tmp_path / "string_amounts.json"
@@ -99,3 +99,35 @@ def test_amounts_render_when_api_returns_a_string(client, api_receipt, tmp_path,
         response = client.get(path)
         assert response.status_code == 200, f"{path}: {response.text[:300]}"
     assert "49.80 zł" in client.get("/receipt/TEST-API-1").text
+
+
+def test_token_upload_accepts_a_valid_file(client, tmp_path, monkeypatch):
+    """Fallback login path: uploading a lidl_tokens.json produced elsewhere."""
+    target = tmp_path / "lidl_tokens.json"
+    monkeypatch.setattr(app, "TOKENS_FILE", str(target))
+
+    tokens = {"access_token": "abc", "refresh_token": "def"}
+    response = client.post(
+        "/login/token",
+        files={"token_file": ("lidl_tokens.json", json.dumps(tokens), "application/json")},
+    )
+
+    assert response.status_code == 200
+    assert json.loads(target.read_text(encoding="utf-8")) == tokens
+
+
+@pytest.mark.parametrize("payload", ["not json at all", '{"foo": "bar"}'])
+def test_token_upload_rejects_a_bad_file(client, tmp_path, monkeypatch, payload):
+    """A malformed file must not overwrite working tokens."""
+    target = tmp_path / "lidl_tokens.json"
+    target.write_text('{"access_token": "keep-me"}', encoding="utf-8")
+    monkeypatch.setattr(app, "TOKENS_FILE", str(target))
+
+    response = client.post(
+        "/login/token",
+        files={"token_file": ("lidl_tokens.json", payload, "application/json")},
+    )
+
+    assert response.status_code == 200
+    assert "Błąd" in response.text
+    assert json.loads(target.read_text(encoding="utf-8")) == {"access_token": "keep-me"}

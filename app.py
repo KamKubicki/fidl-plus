@@ -595,14 +595,20 @@ async def login_page(request: Request):
 
 @app.post("/login/token", response_class=HTMLResponse)
 async def login_upload_token(request: Request):
-    """Wgraj plik lidl_tokens.json - używane w trybie Docker/headless."""
-    from fastapi import Form, UploadFile, File
+    """
+    Upload a lidl_tokens.json produced elsewhere.
+
+    Fallback for when the in-browser login cannot be completed on the server,
+    for example because Lidl blocks the login from that IP address.
+    """
     form = await request.form()
     token_file = form.get("token_file")
     if token_file and hasattr(token_file, "read"):
         content = await token_file.read()
         try:
             tokens = json.loads(content)
+            if not isinstance(tokens, dict) or "access_token" not in tokens:
+                raise ValueError("brak pola access_token")
             os.makedirs(os.path.dirname(os.path.abspath(TOKENS_FILE)), exist_ok=True)
             with open(TOKENS_FILE, "w", encoding="utf-8") as f:
                 json.dump(tokens, f, ensure_ascii=False, indent=2)
