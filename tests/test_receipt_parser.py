@@ -1,11 +1,11 @@
-"""Testy parsera paragonów w formacie htmlPrintedReceipt."""
+"""Tests for the htmlPrintedReceipt parser."""
 from receipt_parser import parse_html_receipt
 
 
-def test_parsuje_wszystkie_pozycje(receipt_html):
-    """Każdy produkt raz - linie 'ilość * cena' nie mogą tworzyć duplikatów."""
-    items = parse_html_receipt(receipt_html)
-    assert [i["name"] for i in items] == [
+def test_parses_every_line_once(html_receipt):
+    """Each product appears once - "qty * price" lines must not create duplicates."""
+    items = parse_html_receipt(html_receipt)
+    assert [item["name"] for item in items] == [
         "Bułka kajzerka",
         "Kawa ziarnista",
         "Melon luz",
@@ -13,22 +13,21 @@ def test_parsuje_wszystkie_pozycje(receipt_html):
     ]
 
 
-def test_nie_dubluje_towaru_na_wage(receipt_html):
+def test_does_not_duplicate_goods_sold_by_weight(html_receipt):
     """
-    Linia wagowa ma format "1,486kg x 12.99" zamiast "1 * 12.99".
-    Nierozpoznana trafiała do wyniku jako osobny produkt.
+    A weighed line reads "1,486kg x 12.99" rather than "1 * 12.99".
+    When unrecognised it used to end up in the result as a separate product.
     """
-    items = parse_html_receipt(receipt_html)
-    melony = [i for i in items if i["name"] == "Melon luz"]
-    assert len(melony) == 1
-    assert melony[0]["quantity"] == "1.486"
-    assert melony[0]["originalAmount"] == "19,3"
+    items = parse_html_receipt(html_receipt)
+    melons = [item for item in items if item["name"] == "Melon luz"]
+    assert len(melons) == 1
+    assert melons[0]["quantity"] == "1.486"
+    assert melons[0]["originalAmount"] == "19,3"
 
 
-def test_wyciaga_rabaty(receipt_html):
-    items = parse_html_receipt(receipt_html)
-    bulka = items[0]
-    assert bulka["discounts"] == [
+def test_extracts_discounts(html_receipt):
+    items = parse_html_receipt(html_receipt)
+    assert items[0]["discounts"] == [
         {
             "description": "Lidl Plus kupon",
             "amount": "0,44",
@@ -37,24 +36,25 @@ def test_wyciaga_rabaty(receipt_html):
     ]
 
 
-def test_rabat_trafia_do_wlasciwej_pozycji(receipt_html):
+def test_discount_is_attached_to_the_right_line(html_receipt):
     """
-    Ta sama kawa kupiona dwa razy, kupon naliczony tylko na pierwszej.
-    Rabat nie może przeciekać na drugą sztukę ani na kolejny produkt.
+    The same coffee is bought twice but discounted only on the first line.
+    The discount must not leak onto the second one, nor onto the product
+    that sits between them.
     """
-    items = parse_html_receipt(receipt_html)
-    pierwsza_kawa, druga_kawa = items[1], items[3]
+    items = parse_html_receipt(html_receipt)
+    first_coffee, melon, second_coffee = items[1], items[2], items[3]
 
-    assert pierwsza_kawa["discounts"][0]["amount"] == "53,99"
-    assert druga_kawa["discounts"] == []
-    assert items[2]["discounts"] == []  # melon między nimi
+    assert first_coffee["discounts"][0]["amount"] == "53,99"
+    assert second_coffee["discounts"] == []
+    assert melon["discounts"] == []
 
 
-def test_produkt_bez_rabatu_ma_pusta_liste(receipt_html):
-    items = parse_html_receipt(receipt_html)
+def test_product_without_discount_has_empty_list(html_receipt):
+    items = parse_html_receipt(html_receipt)
     assert items[3]["discounts"] == []
 
 
-def test_pusty_html_nie_wywala():
+def test_empty_html_does_not_raise():
     assert parse_html_receipt("") == []
     assert parse_html_receipt("<html><body></body></html>") == []

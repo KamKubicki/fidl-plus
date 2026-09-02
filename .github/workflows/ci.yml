@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test:
-    name: Testy i lint (Python ${{ matrix.python-version }})
+    name: Tests and lint (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -30,11 +30,11 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
-      - name: Instalacja zależności
+      - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Lint (ruff)
+      - name: Lint
         run: ruff check --output-format=github .
 
-      - name: Testy (pytest)
+      - name: Tests
         run: pytest

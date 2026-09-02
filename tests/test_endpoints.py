@@ -1,8 +1,8 @@
 """
-Testy endpointów HTTP.
+HTTP endpoint tests.
 
-Sprawdzają głównie to, czego testy jednostkowe nie złapią: czy szablony
-Jinja2 renderują się bez błędu przy realistycznych danych.
+These mostly cover what unit tests cannot: whether the Jinja2 templates
+render without blowing up on realistic data.
 """
 import json
 
@@ -13,24 +13,24 @@ import app
 
 
 @pytest.fixture
-def client(receipt_api, receipt_html, tmp_path, monkeypatch):
-    """Klient HTTP na podstawionym zbiorze paragonów."""
-    paragon_html = {
+def client(api_receipt, html_receipt, tmp_path, monkeypatch):
+    """HTTP client backed by a stubbed receipt dataset."""
+    printed_receipt = {
         "id": "TEST-HTML-1",
         "date": "2026-07-30T12:00:00",
         "store": {"name": "Lidl Testowa 2"},
         "totalAmount": 202.69,
-        "htmlPrintedReceipt": receipt_html,
+        "htmlPrintedReceipt": html_receipt,
     }
 
-    plik = tmp_path / "paragony.json"
-    plik.write_text(json.dumps([receipt_api, paragon_html]), encoding="utf-8")
-    monkeypatch.setattr(app, "DATA_FILE", str(plik))
+    dataset = tmp_path / "receipts.json"
+    dataset.write_text(json.dumps([api_receipt, printed_receipt]), encoding="utf-8")
+    monkeypatch.setattr(app, "DATA_FILE", str(dataset))
 
     return TestClient(app.app)
 
 
-@pytest.mark.parametrize("sciezka", [
+@pytest.mark.parametrize("path", [
     "/",
     "/receipts",
     "/insights",
@@ -44,60 +44,58 @@ def client(receipt_api, receipt_html, tmp_path, monkeypatch):
     "/receipt/TEST-HTML-1",
     "/receipt/TEST-HTML-1/print",
 ])
-def test_strona_sie_renderuje(client, sciezka):
-    odpowiedz = client.get(sciezka)
-    assert odpowiedz.status_code == 200, odpowiedz.text[:400]
+def test_page_renders(client, path):
+    response = client.get(path)
+    assert response.status_code == 200, response.text[:400]
 
 
-@pytest.mark.parametrize("sciezka", [
-    "/receipt/NIE-ISTNIEJE",
-    "/receipt/NIE-ISTNIEJE/print",
-    "/receipt/TEST-API-1/print",  # paragon z API nie ma wersji do wydruku
+@pytest.mark.parametrize("path", [
+    "/receipt/DOES-NOT-EXIST",
+    "/receipt/DOES-NOT-EXIST/print",
+    "/receipt/TEST-API-1/print",  # an API receipt has no printable version
 ])
-def test_brak_zasobu_daje_404(client, sciezka):
-    assert client.get(sciezka).status_code == 404
+def test_missing_resource_returns_404(client, path):
+    assert client.get(path).status_code == 404
 
 
-def test_wydruk_nie_odpytuje_zewnetrznych_serwisow(client):
+def test_printable_receipt_makes_no_external_requests(client):
     """
-    Numer paragonu pokazujemy tekstem. Generowanie kodu kreskowego przez
-    zewnętrzne API wysyłałoby identyfikatory zakupów poza serwer.
+    The receipt number is rendered as text. Generating a barcode through an
+    external API would leak purchase identifiers off the server.
     """
-    tresc = client.get("/receipt/TEST-HTML-1/print").text
-    assert "http://" not in tresc
-    assert "https://" not in tresc
+    body = client.get("/receipt/TEST-HTML-1/print").text
+    assert "http://" not in body
+    assert "https://" not in body
 
 
-def test_szczegoly_paragonu_pokazuja_cene_promocyjna(client):
-    tresc = client.get("/receipt/TEST-API-1").text
-    assert "Cena promocyjna" in tresc
-    assert "0.23 zł" in tresc
+def test_receipt_details_show_promotional_price(client):
+    body = client.get("/receipt/TEST-API-1").text
+    assert "Cena promocyjna" in body
+    assert "0.23 zł" in body
 
 
-def test_login_bez_novnc_nie_pokazuje_przycisku_podgladu(client, monkeypatch):
+def test_login_page_without_novnc_hides_preview_button(client, monkeypatch):
     monkeypatch.setattr(app, "NOVNC_PORT", "")
     monkeypatch.setattr(app, "NOVNC_URL", "")
-    tresc = client.get("/login").text
-    assert "novncUrl" not in tresc
+    assert "novncUrl" not in client.get("/login").text
 
 
-def test_login_z_novnc_pokazuje_przycisk_podgladu(client, monkeypatch):
+def test_login_page_with_novnc_shows_preview_button(client, monkeypatch):
     monkeypatch.setattr(app, "NOVNC_PORT", "6080")
-    tresc = client.get("/login").text
-    assert ":6080/vnc.html" in tresc
+    assert ":6080/vnc.html" in client.get("/login").text
 
 
-def test_kwoty_renderuja_sie_gdy_api_zwroci_string(client, receipt_api, tmp_path, monkeypatch):
+def test_amounts_render_when_api_returns_a_string(client, api_receipt, tmp_path, monkeypatch):
     """
-    REGRESJA: szablony robiły "%.2f"|format(totalAmount), co wywalało stronę,
-    jeśli API zwróciło kwotę jako "49,80" zamiast liczby.
+    REGRESSION: templates used "%.2f"|format(totalAmount), which crashed the
+    page whenever the API returned the amount as "49,80" instead of a number.
     """
-    receipt_api["totalAmount"] = "49,80"
-    plik = tmp_path / "string_amounts.json"
-    plik.write_text(json.dumps([receipt_api]), encoding="utf-8")
-    monkeypatch.setattr(app, "DATA_FILE", str(plik))
+    api_receipt["totalAmount"] = "49,80"
+    dataset = tmp_path / "string_amounts.json"
+    dataset.write_text(json.dumps([api_receipt]), encoding="utf-8")
+    monkeypatch.setattr(app, "DATA_FILE", str(dataset))
 
-    for sciezka in ("/", "/receipts", "/insights", "/receipt/TEST-API-1"):
-        odpowiedz = client.get(sciezka)
-        assert odpowiedz.status_code == 200, f"{sciezka}: {odpowiedz.text[:300]}"
+    for path in ("/", "/receipts", "/insights", "/receipt/TEST-API-1"):
+        response = client.get(path)
+        assert response.status_code == 200, f"{path}: {response.text[:300]}"
     assert "49.80 zł" in client.get("/receipt/TEST-API-1").text

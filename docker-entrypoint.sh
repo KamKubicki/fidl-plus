@@ -12,33 +12,33 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Startuję Xvfb na ${DISPLAY} (${SCREEN})..."
+echo "Starting Xvfb on ${DISPLAY} (${SCREEN})..."
 Xvfb "${DISPLAY}" -screen 0 "${SCREEN}" -ac +extension GLX +render -noreset \
     > /tmp/xvfb.log 2>&1 &
 XVFB_PID=$!
 
-# Czekamy aż ekran faktycznie wstanie - `sleep 1` bywa za krótkie na wolniejszym
-# sprzęcie i Chromium wywala się wtedy z "cannot open display".
+# Wait until the display is really up: a fixed `sleep 1` is too short on slower
+# hardware and Chromium then dies with "cannot open display".
 for _ in $(seq 1 30); do
     if xdpyinfo -display "${DISPLAY}" >/dev/null 2>&1; then
         break
     fi
     if ! kill -0 "${XVFB_PID}" 2>/dev/null; then
-        echo "BŁĄD: Xvfb nie wystartował"
+        echo "ERROR: Xvfb failed to start"
         cat /tmp/xvfb.log
         exit 1
     fi
     sleep 0.5
 done
 
-echo "Startuję x11vnc na porcie ${VNC_PORT}..."
+echo "Starting x11vnc on port ${VNC_PORT}..."
 x11vnc -display "${DISPLAY}" -forever -shared -nopw \
     -listen 0.0.0.0 -rfbport "${VNC_PORT}" \
     > /tmp/x11vnc.log 2>&1 &
 
-echo "Startuję noVNC na porcie ${NOVNC_PORT}..."
+echo "Starting noVNC on port ${NOVNC_PORT}..."
 websockify --web=/usr/share/novnc "${NOVNC_PORT}" "localhost:${VNC_PORT}" \
     > /tmp/websockify.log 2>&1 &
 
-echo "Startuję Fidl Plus na porcie ${APP_PORT}..."
+echo "Starting Fidl Plus on port ${APP_PORT}..."
 exec uvicorn app:app --host 0.0.0.0 --port "${APP_PORT}"

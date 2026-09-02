@@ -1,29 +1,29 @@
 """
-Wspólne fixture'y dla testów.
+Shared test fixtures.
 
-Wszystkie dane są syntetyczne - odwzorowują format paragonów Lidl Plus,
-ale nie zawierają prawdziwych zakupów.
+All data here is synthetic. It mirrors the shape of real Lidl Plus receipts
+without containing any actual purchases.
 """
 import os
 import tempfile
 
 import pytest
 
-# app.py przy imporcie tworzy DATA_DIR - kierujemy go do katalogu tymczasowego,
-# żeby testy nie dotykały prawdziwych danych ani ich nie nadpisywały.
+# Importing app.py creates DATA_DIR, so point it at a throwaway directory:
+# tests must never touch or overwrite real data.
 os.environ.setdefault("DATA_DIR", tempfile.mkdtemp(prefix="fidl-tests-"))
 
 
 @pytest.fixture
-def receipt_html():
+def html_receipt():
     """
-    Paragon w formacie htmlPrintedReceipt.
+    A receipt in the htmlPrintedReceipt format.
 
-    Zawiera cztery przypadki, na których parser potrafi się wyłożyć:
-    - produkt z rabatem Lidl Plus,
-    - produkt bez rabatu,
-    - towar na wagę ("1,486kg x 12.99" zamiast "1 * 12.99"),
-    - ten sam produkt kupiony dwa razy, rabat tylko na jednej sztuce.
+    Covers the four cases the parser has historically got wrong:
+    - a product with a Lidl Plus discount,
+    - a product without any discount,
+    - goods sold by weight ("1,486kg x 12.99" instead of "1 * 12.99"),
+    - the same product bought twice, discounted on only one of the lines.
     """
     return """
     <html><body><pre>
@@ -62,8 +62,8 @@ def receipt_html():
 
 
 @pytest.fixture
-def receipt_api():
-    """Paragon w nowszym formacie API - z gotowym itemsLine."""
+def api_receipt():
+    """A receipt in the newer API format, with itemsLine already provided."""
     return {
         "id": "TEST-API-1",
         "date": "2026-07-31T18:12:00",

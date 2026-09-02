@@ -228,7 +228,8 @@ Pobieranie wszystkich paragonów może potrwać kilka minut.
 │   ├── login.html
 │   └── sync.html
 ├── requirements.txt
-├── data/                   # Tokeny i pobrane paragony (poza repozytorium)
+├── data/                   # Tokeny i paragony: receipts.json, lidl_tokens.json
+│                           # (poza repozytorium)
 └── docs/
     └── screenshots/
 ```
@@ -267,9 +268,12 @@ Statystyki, wykresy i rankingi liczone są na cenach promocyjnych.
 
 ## Dane
 
-Paragony i tokeny są przechowywane lokalnie w katalogu `data/`
-(konfigurowalnym przez `DATA_DIR`). Katalog nie jest commitowany
-do repozytorium (`.gitignore`).
+Paragony (`receipts.json`) i tokeny (`lidl_tokens.json`) są przechowywane
+lokalnie w katalogu `data/`, konfigurowalnym przez `DATA_DIR`. Katalog nie
+jest commitowany do repozytorium (`.gitignore`).
+
+> Starsza nazwa `wszystkie_paragony_szczegoly.json` jest nadal wczytywana,
+> więc aktualizacja nie gubi danych – aplikacja tylko ostrzeże w logu.
 
 API zwraca dwa formaty paragonów:
 - **JSON** (`itemsLine`) – nowsze paragony, pełna struktura produktów

@@ -1,6 +1,6 @@
 #!/bin/bash
-# Handler custom scheme com.lidlplus.app:// wywoływany przez xdg-open.
-# Zapisuje deep link OAuth do pliku, który odpytuje browser_login.py.
+# Handler for the com.lidlplus.app:// custom scheme, invoked by xdg-open.
+# Writes the OAuth deep link to a file that browser_login.py polls.
 set -u
 
 URL="${1:-}"

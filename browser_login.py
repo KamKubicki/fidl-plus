@@ -1,14 +1,15 @@
 """
-Logowanie do Lidl Plus przez prawdziwą przeglądarkę (Chrome / Chromium).
+Lidl Plus login through a real browser (Chrome / Chromium).
 
-Lidl przekierowuje po zalogowaniu na custom scheme:
+After a successful login Lidl redirects to a custom scheme:
     com.lidlplus.app://callback?code=...
 
-Przechwytujemy ten deep link dwiema drogami:
-1. CDP / Playwright - nasłuch na żądaniach i nawigacjach w przeglądarce,
-2. handler xdg-open - zapisuje URL do pliku (tylko Linux/Docker).
+That deep link is captured two ways:
+1. CDP / Playwright - listening on browser requests and navigations,
+2. an xdg-open handler that writes the URL to a file (Linux/Docker only).
 
-W Dockerze Chromium działa pod Xvfb, a okno widać przez noVNC na porcie 6080.
+Inside Docker, Chromium runs under Xvfb and its window is exposed over
+noVNC on port 6080.
 """
 import os
 import shutil
@@ -51,14 +52,14 @@ LOGIN_TIMEOUT = int(os.getenv("LOGIN_TIMEOUT", "180"))
 # ---------------------------------------------------------------------------
 
 def _extract_code(url: str) -> str | None:
-    """Wyciąga authorization code z com.lidlplus.app://callback?code=..."""
+    """Extract the authorization code from com.lidlplus.app://callback?code=..."""
     if not url or not url.startswith("com.lidlplus.app://"):
         return None
     return parse_qs(urlparse(url).query).get("code", [None])[0]
 
 
 def _clear_callback_file():
-    """Usuwa callback z poprzedniego logowania, żeby nie użyć starego kodu."""
+    """Drop the callback from a previous login so a stale code is never reused."""
     try:
         os.remove(CALLBACK_FILE)
     except FileNotFoundError:
@@ -89,9 +90,9 @@ def login_with_browser() -> dict | None:
     os.makedirs(DATA_DIR, exist_ok=True)
     _clear_callback_file()
 
-    # Za każdym razem świeży profil - Chromium zostawia w profilu SingletonLock
-    # i przy ponownym logowaniu wywala "Failed to create a ProcessSingleton".
-    # Tokeny i tak trzymamy osobno w TOKENS_FILE.
+    # Always a fresh profile: Chromium leaves a SingletonLock behind, which
+    # makes the next login fail with "Failed to create a ProcessSingleton".
+    # Tokens are stored separately in TOKENS_FILE anyway.
     chrome_profile = tempfile.mkdtemp(prefix="fidl-chrome-", dir=DATA_DIR)
 
     found = {"code": None}
@@ -123,8 +124,8 @@ def login_with_browser() -> dict | None:
                 )
                 page = browser.pages[0] if browser.pages else browser.new_page()
 
-                # Główna droga: CDP widzi też przekierowania na custom scheme,
-                # których Playwright czasem nie raportuje.
+                # Primary path: CDP also sees redirects to the custom scheme,
+                # which Playwright does not always report.
                 cdp = browser.new_cdp_session(page)
                 cdp.send("Network.enable")
 
@@ -136,7 +137,7 @@ def login_with_browser() -> dict | None:
 
                 cdp.on("Network.requestWillBeSent", on_request_sent)
 
-                # Zapasowe nasłuchy.
+                # Backup listeners.
                 page.on("request", lambda req: capture(req.url, "request"))
                 page.on("framenavigated", lambda frame: capture(frame.url, "nawigacja"))
 
@@ -161,7 +162,7 @@ def login_with_browser() -> dict | None:
                     if found["code"]:
                         break
 
-                    # Fallback: handler xdg-open zapisał deep link do pliku.
+                    # Fallback: the xdg-open handler wrote the deep link to a file.
                     callback_url = _read_callback_file()
                     if callback_url:
                         capture(callback_url, "xdg-open callback")

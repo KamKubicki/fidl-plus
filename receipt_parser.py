@@ -1,8 +1,8 @@
 """
-Narzędzia do przetwarzania paragonów Lidl Plus:
-- parse_html_receipt()   - parsuje htmlPrintedReceipt → itemsLine
-- build_barcode_index()  - buduje słownik barcode → kanonicznna nazwa
-- normalize_receipts()   - ujednolica nazwy produktów w całym zbiorze
+Utilities for processing Lidl Plus receipts:
+- parse_html_receipt()   - parses htmlPrintedReceipt into itemsLine
+- build_barcode_index()  - maps barcode -> canonical product name
+- normalize_receipts()   - unifies product names across the whole dataset
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from collections import defaultdict
 
 
 def _price_to_float(val: str) -> float:
-    """'3,55' lub '3.55' → 3.55"""
+    """Parse a price string: '3,55' or '3.55' -> 3.55"""
     try:
         return float(str(val).replace(",", ".").strip())
     except (ValueError, TypeError):
@@ -21,15 +21,15 @@ def _price_to_float(val: str) -> float:
 # id="purchase_list_line_N"
 _LINE_ID_RE = re.compile(r"^purchase_list_line_\d+$")
 
-# Druga linia produktu, np. "        4 * 0.34 1.36 C" albo "   1,486kg x 12.99 19.3 C"
+# Second line of a product, e.g. "        4 * 0.34 1.36 C" or "   1,486kg x 12.99 19.3 C"
 _AMOUNT_LINE_RE = re.compile(r"^\s*[\d.,]+\s*(?:kg|g|szt\.?)?\s*[*x]\s*[\d.,]+", re.IGNORECASE)
 
-# Kwota rabatu na końcu linii, np. "   Lidl Plus kupon   -0,44"
+# Discount amount at the end of a line, e.g. "   Lidl Plus kupon   -0,44"
 _DISCOUNT_AMOUNT_RE = re.compile(r"-\s*([\d]+[.,][\d]{2})\s*$")
 
 
 def _parse_discount_span(span) -> dict | None:
-    """Zamienia <span class="discount"> na wpis zgodny z formatem API."""
+    """Convert a <span class="discount"> line into an API-shaped discount entry."""
     text = " ".join(span.get_text().split())
     match = _DISCOUNT_AMOUNT_RE.search(text)
     if not match:
@@ -49,20 +49,20 @@ def _parse_discount_span(span) -> dict | None:
 
 def parse_html_receipt(html: str) -> list[dict]:
     """
-    Parsuje htmlPrintedReceipt i zwraca listę produktów
-    w tym samym formacie co itemsLine z API v3.
+    Parse htmlPrintedReceipt and return products in the same shape as
+    itemsLine from API v3.
 
-    Każdy span.article ma atrybuty:
-        data-art-id          - wewnętrzny ID produktu (nie barcode EAN)
-        data-art-description - nazwa
-        data-unit-price      - cena jednostkowa "3,55"
-        data-art-quantity    - ilość (opcjonalnie, domyślnie 1)
+    Every span.article carries the attributes:
+        data-art-id          - internal product id (not an EAN barcode)
+        data-art-description - name
+        data-unit-price      - unit price, "3,55"
+        data-art-quantity    - quantity (optional, defaults to 1)
         data-tax-type        - A/B/C/D
 
-    Produkt zajmuje dwie kolejne linie span.article (nazwa + "ilość * cena"),
-    po których mogą wystąpić linie span.discount z rabatami Lidl Plus:
+    A product spans two consecutive span.article lines (name + "qty * price"),
+    optionally followed by span.discount lines with Lidl Plus discounts:
 
-        <span class="article" ...>Bułka kajzerka 2</span>
+        <span class="article" ...>Bulka kajzerka 2</span>
         <span class="article" ...>        4 * 0.34 1.36 C</span>
         <span class="discount" ...>   Lidl Plus kupon        -0,44</span>
     """
@@ -80,7 +80,7 @@ def parse_html_receipt(html: str) -> list[dict]:
         classes = span.get("class", [])
 
         if "discount" in classes:
-            # Rabat dotyczy ostatnio sparsowanego produktu
+            # A discount always belongs to the most recently parsed product
             if current is None:
                 continue
             discount = _parse_discount_span(span)
@@ -95,7 +95,7 @@ def parse_html_receipt(html: str) -> list[dict]:
         if not desc:
             continue
 
-        # Druga linia produktu ("4 * 0.34 1.36 C") to duplikat - pomijamy.
+        # The second product line ("4 * 0.34 1.36 C") is a duplicate - skip it.
         if _AMOUNT_LINE_RE.match(span.get_text()):
             continue
 
@@ -122,8 +122,10 @@ def parse_html_receipt(html: str) -> list[dict]:
 
 def build_barcode_index(receipts: list[dict]) -> dict[str, str]:
     """
-    Buduje słownik: barcode → najczęściej używana nazwa produktu.
-    Pomija puste barcody i wewnętrzne ID z HTML paragonów (krótkie cyfry).
+    Build a mapping: barcode -> most frequently used product name.
+
+    Skips empty barcodes and Lidl's internal ids from HTML receipts,
+    which are short numeric strings rather than real EANs.
     """
     barcode_names: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
@@ -134,13 +136,13 @@ def build_barcode_index(receipts: list[dict]) -> dict[str, str]:
 
             if not barcode or not name:
                 continue
-            # Pomijaj wewnętrzne ID Lidla (< 8 cyfr, bo EAN ma 8 lub 13)
+            # Skip Lidl internal ids (< 8 digits; an EAN has 8 or 13)
             if re.match(r"^\d{1,7}$", barcode):
                 continue
 
             barcode_names[barcode][name] += 1
 
-    # Dla każdego barcode wybierz najczęstszą nazwę
+    # For each barcode pick the most common name
     index = {}
     for barcode, name_counts in barcode_names.items():
         best_name = max(name_counts, key=name_counts.get)
@@ -151,8 +153,8 @@ def build_barcode_index(receipts: list[dict]) -> dict[str, str]:
 
 def normalize_receipts(receipts: list[dict], barcode_index: dict[str, str]) -> list[dict]:
     """
-    Zwraca kopię paragonów z ujednoliconymi nazwami produktów
-    według barcode_index. Oryginalna nazwa zachowana w _original_name.
+    Return a copy of the receipts with product names unified according to
+    barcode_index. The original name is preserved in _original_name.
     """
     normalized = []
     for receipt in receipts:
@@ -175,23 +177,25 @@ def normalize_receipts(receipts: list[dict], barcode_index: dict[str, str]) -> l
 
 def enrich_receipts(receipts: list[dict]) -> list[dict]:
     """
-    Główna funkcja - parsuje HTML paragony i normalizuje nazwy.
-    Zwraca wzbogacony zbiór paragonów gotowy do wyświetlenia.
+    Entry point - parse HTML receipts and normalize product names.
+
+    Returns the enriched receipts ready for display, together with the
+    barcode index used for normalization.
     """
     enriched = []
     for receipt in receipts:
         r = dict(receipt)
-        # Jeśli brak itemsLine ale jest htmlPrintedReceipt - sparsuj
+        # No itemsLine but an HTML printout is available - parse it
         if not r.get("itemsLine") and r.get("htmlPrintedReceipt"):
             parsed = parse_html_receipt(r["htmlPrintedReceipt"])
             if parsed:
                 r["itemsLine"] = parsed
         enriched.append(r)
 
-    # Buduj index na już wzbogaconym zbiorze
+    # Build the index on the already enriched dataset
     barcode_index = build_barcode_index(enriched)
 
-    # Normalizuj nazwy
+    # Unify product names
     enriched = normalize_receipts(enriched, barcode_index)
 
     return enriched, barcode_index

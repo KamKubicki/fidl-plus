@@ -8,8 +8,8 @@ services:
     restart: unless-stopped
 
     ports:
-      - "8000:8000"   # aplikacja
-      - "6080:6080"   # noVNC - podgląd przeglądarki przy logowaniu
+      - "8000:8000"   # application
+      - "6080:6080"   # noVNC - browser preview during login
 
     volumes:
       - ./data:/data
@@ -19,5 +19,5 @@ services:
       DATA_DIR: /data
       NOVNC_PORT: "6080"
 
-    # Chromium potrzebuje więcej niż domyślne 64 MB na /dev/shm
+    # Chromium needs more than the default 64 MB of /dev/shm
     shm_size: "1gb"

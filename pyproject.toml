@@ -1,7 +1,7 @@
 [project]
 name = "fidl-plus"
 version = "0.1.0"
-description = "Dashboard paragonów Lidl Plus"
+description = "Lidl Plus receipts dashboard"
 requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
@@ -28,9 +28,9 @@ select = [
     "SIM",  # simplify
 ]
 ignore = [
-    "E501",   # długość linii pilnuje formatter, nie lint
-    "B008",   # Depends()/Query() w domyślnych argumentach to idiom FastAPI
+    "E501",   # line length is the formatter's job, not the linter's
+    "B008",   # Depends()/Query() as default arguments is the FastAPI idiom
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]  # ustawienie DATA_DIR musi poprzedzać import app
+"tests/*" = ["E402"]  # DATA_DIR must be set before app is imported

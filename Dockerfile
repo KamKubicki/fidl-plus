@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 WORKDIR /app
 
-# Chromium + Xvfb (wirtualny ekran) + x11vnc/noVNC (podgląd okna w przeglądarce)
+# Chromium + Xvfb (virtual screen) + x11vnc/noVNC (browser preview in a tab)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         chromium \
         xvfb \
@@ -27,9 +27,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Handler custom scheme com.lidlplus.app:// - zapisuje deep link OAuth do pliku,
-# który odczytuje browser_login.py. Rejestrujemy go systemowo (nie przez
-# `xdg-mime default`, bo to zapisuje ustawienie tylko dla użytkownika root).
+# Handler for the com.lidlplus.app:// scheme: it writes the OAuth deep link to
+# a file that browser_login.py reads. Registered system-wide rather than with
+# `xdg-mime default`, which only records the setting for the root user.
 RUN install -m 755 /app/lidl-callback-handler /usr/local/bin/lidl-callback-handler \
     && mkdir -p /usr/share/applications \
     && printf '%s\n' \
@@ -48,7 +48,7 @@ RUN install -m 755 /app/lidl-callback-handler /usr/local/bin/lidl-callback-handl
         > /usr/share/applications/mimeapps.list \
     && update-desktop-database /usr/share/applications || true
 
-# Chromium nie uruchomi się jako root bez --no-sandbox
+# Chromium refuses to start as root without --no-sandbox
 RUN useradd --create-home --uid 1000 --shell /bin/bash fidl \
     && mkdir -p /data \
     && chmod +x /app/docker-entrypoint.sh \

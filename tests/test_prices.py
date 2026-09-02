@@ -1,8 +1,8 @@
 """
-Testy obliczeń cen i rabatów.
+Tests for price and discount calculations.
 
-Najważniejszy jest test_total_amount_jest_juz_po_rabacie - pilnuje założenia,
-na którym stoi cała reszta statystyk.
+The most important one is test_total_amount_is_already_net_of_discounts:
+it guards the assumption the rest of the statistics rely on.
 """
 import pytest
 
@@ -13,51 +13,54 @@ from receipt_parser import parse_html_receipt
 # parse_price
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("wejscie, oczekiwane", [
+
+@pytest.mark.parametrize("value, expected", [
     ("4,39", 4.39),
     ("4.39", 4.39),
     (4.39, 4.39),
     (None, 0.0),
     ("", 0.0),
-    ("nie liczba", 0.0),
+    ("not a number", 0.0),
 ])
-def test_parse_price(wejscie, oczekiwane):
-    assert app.parse_price(wejscie) == oczekiwane
+def test_parse_price(value, expected):
+    assert app.parse_price(value) == expected
 
 
 # ---------------------------------------------------------------------------
-# Rabaty na pozycji
+# Per-line discounts
 # ---------------------------------------------------------------------------
 
-def test_item_discount_sumuje_rabaty():
+
+def test_item_discount_sums_all_discounts():
     item = {"discounts": [{"amount": "1,50"}, {"amount": "0,50"}]}
     assert app.item_discount(item) == 2.0
 
 
-def test_item_discount_normalizuje_znak():
-    """API zwraca kwotę raz jako '1,50', raz jako '-1,50'."""
+def test_item_discount_normalizes_sign():
+    """The API returns the amount as "1,50" in some places and "-1,50" in others."""
     assert app.item_discount({"discounts": [{"amount": "-1,50"}]}) == 1.5
     assert app.item_discount({"discounts": [{"amount": "1,50"}]}) == 1.5
 
 
-def test_item_discount_bez_rabatow():
+def test_item_discount_without_discounts():
     assert app.item_discount({}) == 0.0
     assert app.item_discount({"discounts": None}) == 0.0
 
 
 # ---------------------------------------------------------------------------
-# Ceny jednostkowe
+# Unit prices
 # ---------------------------------------------------------------------------
 
-def test_item_prices_bez_rabatu():
+
+def test_item_prices_without_discount():
     item = {"currentUnitPrice": "3,99", "quantity": "1", "originalAmount": "3,99"}
     base, promo = app.item_prices(item)
     assert base == 3.99
     assert promo == 3.99
 
 
-def test_item_prices_rabat_dzielony_przez_ilosc():
-    """Rabat jest kwotą łączną dla pozycji, cena promocyjna jest za sztukę."""
+def test_item_prices_divides_discount_by_quantity():
+    """A discount is a total for the line; the promo price is per unit."""
     item = {
         "currentUnitPrice": "0,34",
         "quantity": "4",
@@ -69,7 +72,7 @@ def test_item_prices_rabat_dzielony_przez_ilosc():
     assert promo == pytest.approx(0.23)
 
 
-def test_item_prices_nie_schodzi_ponizej_zera():
+def test_item_prices_never_go_below_zero():
     item = {
         "currentUnitPrice": "5,00",
         "quantity": "1",
@@ -80,114 +83,116 @@ def test_item_prices_nie_schodzi_ponizej_zera():
     assert promo == 0.0
 
 
-def test_item_prices_zerowa_ilosc_nie_dzieli_przez_zero():
+def test_item_prices_zero_quantity_does_not_divide_by_zero():
     item = {"currentUnitPrice": "5,00", "quantity": "0", "originalAmount": "5,00"}
     base, promo = app.item_prices(item)
     assert base == 5.0
     assert promo == 5.0
 
 
-def test_original_amount_dla_wagi():
+def test_original_amount_for_goods_sold_by_weight():
     """
-    Dla towaru na wagę cena jednostkowa razy ilość nie odtwarza kwoty,
-    więc bierzemy originalAmount z API.
+    For weighed goods unit price times quantity does not reproduce the amount,
+    so originalAmount from the API wins.
     """
     item = {"currentUnitPrice": "12,99", "quantity": "1,486", "originalAmount": "19,30"}
     assert app.item_original_amount(item) == 19.30
 
 
-def test_original_amount_fallback_gdy_brak():
+def test_original_amount_falls_back_to_unit_price_times_quantity():
     item = {"currentUnitPrice": "2,50", "quantity": "2"}
     assert app.item_original_amount(item) == 5.0
 
 
 # ---------------------------------------------------------------------------
-# Sumy paragonu
+# Receipt totals
 # ---------------------------------------------------------------------------
 
-def test_total_amount_jest_juz_po_rabacie(receipt_api):
+
+def test_total_amount_is_already_net_of_discounts(api_receipt):
     """
-    REGRESJA: totalAmount zwracane przez API jest już PO odliczeniu rabatów.
-    Odejmowanie totalDiscount po raz drugi zaniża wydatki.
+    REGRESSION: totalAmount returned by the API is already NET of discounts.
+    Subtracting totalDiscount a second time under-reports spending.
 
-    Sprawdzamy to na paragonie, gdzie suma pozycji minus rabaty daje
-    dokładnie totalAmount: 1,36 + 3,99 - 0,44 = 4,91.
+    Verified on a receipt where line amounts minus discounts equal totalAmount
+    exactly: 1.36 + 3.99 - 0.44 = 4.91.
     """
-    pozycje = sum(app.item_original_amount(i) for i in receipt_api["itemsLine"])
-    rabaty = sum(app.item_discount(i) for i in receipt_api["itemsLine"])
-    receipt_api["totalAmount"] = f"{pozycje - rabaty:.2f}".replace(".", ",")
+    lines = sum(app.item_original_amount(i) for i in api_receipt["itemsLine"])
+    discounts = sum(app.item_discount(i) for i in api_receipt["itemsLine"])
+    api_receipt["totalAmount"] = round(lines - discounts, 2)
 
-    assert app.receipt_total(receipt_api) == pytest.approx(pozycje - rabaty)
-    assert app.receipt_total(receipt_api) == pytest.approx(4.91)
-
-
-def test_receipt_discount_z_pola_total(receipt_api):
-    assert app.receipt_discount(receipt_api) == 0.44
+    assert app.receipt_total(api_receipt) == pytest.approx(lines - discounts)
+    assert app.receipt_total(api_receipt) == pytest.approx(4.91)
 
 
-def test_receipt_discount_liczony_z_pozycji_gdy_brak_pola(receipt_api):
-    """Paragony sparsowane z HTML nie mają totalDiscount."""
-    receipt_api.pop("totalDiscount")
-    assert app.receipt_discount(receipt_api) == 0.44
+def test_receipt_discount_read_from_total_field(api_receipt):
+    assert app.receipt_discount(api_receipt) == 0.44
+
+
+def test_receipt_discount_summed_from_lines_when_field_missing(api_receipt):
+    """Receipts parsed from HTML carry no totalDiscount field."""
+    api_receipt.pop("totalDiscount")
+    assert app.receipt_discount(api_receipt) == 0.44
 
 
 # ---------------------------------------------------------------------------
-# Agregacje
+# Aggregations
 # ---------------------------------------------------------------------------
 
-def test_get_stats_sumuje_rabaty(receipt_api):
-    stats = app.get_stats([receipt_api])
+
+def test_get_stats_sums_discounts(api_receipt):
+    stats = app.get_stats([api_receipt])
     assert stats["total_receipts"] == 1
     assert stats["total_discount"] == 0.44
     assert stats["total_spent"] == pytest.approx(49.80)
 
 
-def test_search_products_zwraca_obie_ceny(receipt_api):
-    wyniki = app.search_products([receipt_api], "kajzerka")
-    assert len(wyniki) == 1
-    assert wyniki[0]["base_price"] == 0.34
-    assert wyniki[0]["last_price"] == pytest.approx(0.23)
+def test_search_products_returns_both_prices(api_receipt):
+    results = app.search_products([api_receipt], "kajzerka")
+    assert len(results) == 1
+    assert results[0]["base_price"] == 0.34
+    assert results[0]["last_price"] == pytest.approx(0.23)
 
 
-def test_product_history_zwraca_obie_ceny(receipt_api):
-    historia = app.get_product_history([receipt_api], "kajzerka")
-    assert len(historia) == 1
-    assert historia[0]["base_price"] == 0.34
-    assert historia[0]["promo_price"] == pytest.approx(0.23)
+def test_product_history_returns_both_prices(api_receipt):
+    history = app.get_product_history([api_receipt], "kajzerka")
+    assert len(history) == 1
+    assert history[0]["base_price"] == 0.34
+    assert history[0]["promo_price"] == pytest.approx(0.23)
 
 
-def test_top_products_liczy_kwote_po_rabacie(receipt_api):
-    """Wydatek na produkt to kwota faktycznie zapłacona, nie cena z półki."""
-    receipt_api["itemsLine"][0]["quantity"] = "2"
-    wynik = app.get_top_products([receipt_api])
-    bulka = next(p for p in wynik["top_by_count"] if p["name"] == "Bułka kajzerka")
-    assert bulka["spend"] == pytest.approx(0.92)  # 1,36 - 0,44
+def test_top_products_spend_uses_amount_after_discount(api_receipt):
+    """Spend per product is what was actually paid, not the shelf price."""
+    api_receipt["itemsLine"][0]["quantity"] = "2"
+    result = app.get_top_products([api_receipt])
+    roll = next(p for p in result["top_by_count"] if p["name"] == "Bułka kajzerka")
+    assert roll["spend"] == pytest.approx(0.92)  # 1.36 - 0.44
 
 
-def test_coupon_stats(receipt_api):
-    stats = app.get_coupon_stats([receipt_api])
+def test_coupon_stats(api_receipt):
+    stats = app.get_coupon_stats([api_receipt])
     assert stats["total_coupons"] == 1
     assert stats["total_discount"] == 0.44
     assert stats["receipts_with_coupon"] == 1
 
 
-def test_puste_dane_nie_wywalaja():
+def test_empty_dataset_does_not_raise():
     assert app.get_stats([]) == {}
-    assert app.search_products([], "cokolwiek") == []
-    assert app.get_product_history([], "cokolwiek") == []
+    assert app.search_products([], "anything") == []
+    assert app.get_product_history([], "anything") == []
 
 
 # ---------------------------------------------------------------------------
-# Spójność: HTML i API liczone tak samo
+# Consistency: HTML and API receipts are computed the same way
 # ---------------------------------------------------------------------------
 
-def test_paragon_z_html_liczy_sie_tak_samo_jak_z_api(receipt_html):
-    """Pozycje z HTML przechodzą przez te same funkcje co pozycje z API."""
-    items = parse_html_receipt(receipt_html)
-    paragon = {"id": "X", "date": "2026-07-31T10:00:00", "itemsLine": items}
 
-    rabaty = app.receipt_discount(paragon)
-    assert rabaty == pytest.approx(54.43)  # 0,44 + 53,99
+def test_html_receipt_is_computed_like_an_api_one(html_receipt):
+    """Lines parsed from HTML go through exactly the same functions as API lines."""
+    items = parse_html_receipt(html_receipt)
+    receipt = {"id": "X", "date": "2026-07-31T10:00:00", "itemsLine": items}
+
+    assert app.receipt_discount(receipt) == pytest.approx(54.43)  # 0.44 + 53.99
 
     _base, promo = app.item_prices(items[1])
-    assert promo == pytest.approx(36.00)  # 89,99 - 53,99
+    assert promo == pytest.approx(36.00)  # 89.99 - 53.99

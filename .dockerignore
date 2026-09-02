@@ -7,6 +7,7 @@ __pycache__
 *.pyo
 
 lidl_tokens.json
+receipts.json
 wszystkie_paragony_szczegoly.json
 
 .fidl_chrome_profile

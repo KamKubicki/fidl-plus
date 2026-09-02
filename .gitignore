@@ -1,10 +1,10 @@
-# Tokeny i sesje - NIE COMMITOWAĆ
+# Tokens and sessions - NEVER COMMIT
 *_tokens.json
 lidl_tokens.json
 
-# Dane osobiste - NIE COMMITOWAĆ
+# Personal data - NEVER COMMIT
+receipts.json
 wszystkie_paragony_szczegoly.json
-paragony.json
 *.csv
 *.har
 *.pcap
@@ -12,11 +12,10 @@ logowanie
 fresh_cookies
 akamai_cookies.txt
 
-# Pliki tymczasowe / debug
+# Temporary / debug files
 debug_*.html
 debug_*.txt
 debug_*.py
-test
 
 # Python
 __pycache__/
@@ -35,11 +34,10 @@ Thumbs.db
 .idea/
 *.swp
 
-# Chrome profile logowania
+# Chrome login profile
 .lidl_chrome_profile/
 
-# Screenshoty - commitowane do repozytorium (docs/)
-# docs/screenshots/
+# Screenshots are committed on purpose (docs/screenshots)
 
-# Dane runtime (Docker volume / lokalny katalog danych)
+# Runtime data (Docker volume / local data directory)
 data/
